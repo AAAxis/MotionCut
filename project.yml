@@ -1,0 +1,53 @@
+name: CreatorAI
+options:
+  bundleIdPrefix: com.theholylabs
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "1.1"
+    CURRENT_PROJECT_VERSION: 1
+    DEVELOPMENT_TEAM: LJPXXSNQZ9
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift.git
+    from: "2.0.0"
+  RevenueCat:
+    url: https://github.com/RevenueCat/purchases-ios-spm.git
+    from: "5.0.0"
+  AppsFlyerLib:
+    url: https://github.com/AppsFlyerSDK/AppsFlyerFramework-Dynamic.git
+    from: "6.15.0"
+
+targets:
+  CreatorAI:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: CreatorAI
+    resources:
+      - path: CreatorAI/Resources/Assets.xcassets
+        type: folder
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.theholylabs.creator
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: true
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: true
+        INFOPLIST_KEY_UILaunchScreen_Generation: true
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "CreatorAI needs access to your photo library to save and share videos."
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "CreatorAI needs permission to save videos to your gallery."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "CreatorAI needs microphone access for recording."
+    dependencies:
+      - package: Supabase
+      - package: RevenueCat
+        product: RevenueCat
+      - package: RevenueCat
+        product: RevenueCatUI
+      - package: AppsFlyerLib
+        product: AppsFlyerLib-Dynamic
