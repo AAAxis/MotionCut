@@ -113,6 +113,23 @@ async function init() {
     CREATE INDEX IF NOT EXISTS idx_avatars_user ON avatars(user_id);
     CREATE INDEX IF NOT EXISTS idx_uploads_user ON video_uploads(user_id);
     CREATE INDEX IF NOT EXISTS idx_avatar_uploads_user ON avatar_uploads(user_id);
+
+    CREATE TABLE IF NOT EXISTS influencer_generations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      avatar_id TEXT,
+      reference_video_url TEXT,
+      topic TEXT,
+      duration INT DEFAULT 10,
+      replicate_id TEXT,
+      status TEXT DEFAULT 'starting',
+      output_url TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_influencer_generations_user ON influencer_generations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_influencer_generations_status ON influencer_generations(status);
   `);
 
   app.listen(PORT, '0.0.0.0', () => {

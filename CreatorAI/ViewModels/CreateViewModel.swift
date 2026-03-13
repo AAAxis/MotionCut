@@ -148,48 +148,83 @@ class CreateViewModel: ObservableObject {
     // MARK: - Reel Generation
 
     func generateReel(appState: AppState) async -> Bool {
-        guard !reelTopic.trimmingCharacters(in: .whitespaces).isEmpty else {
+        let topic = reelTopic.trimmingCharacters(in: .whitespaces)
+
+        guard !topic.isEmpty else {
             errorMessage = "Enter a topic for your reel"
             return false
         }
         guard checkCredits(appState) else { return false }
 
-        isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        let generation = Generation(
+            videoName: topic,
+            videoUri: nil,
+            resultVideoUrl: nil,
+            status: .processing,
+            createdAt: Date(),
+            userId: appState.userId ?? "demo-user"
+        )
 
-        do {
-            let response = try await GenerationService.shared.generateReel(
-                topic: reelTopic.trimmingCharacters(in: .whitespaces),
-                language: reelLang,
-                duration: reelDuration,
-                influencerId: reelInfluencerId,
-                referenceVideoUrl: reelReferenceVideoURL?.absoluteString
-            )
+        await GenerationService.shared.saveGeneration(generation)
+        appState.useCredits()
 
-            guard let downloadUrl = response.downloadUrl, !downloadUrl.isEmpty else {
-                errorMessage = "The API did not return a video URL."
-                return false
+        let language = reelLang
+        let duration = reelDuration
+        let influencerId = reelInfluencerId
+        let referenceVideoURL = reelReferenceVideoURL
+        let userId = appState.userId ?? "demo-user"
+
+        resetReelForm()
+
+        Task.detached(priority: .background) {
+            do {
+                if let localReferenceVideoURL = referenceVideoURL {
+                    let uploadedVideo = try await GenerationService.shared.uploadReferenceVideo(
+                        fileURL: localReferenceVideoURL,
+                        userId: userId
+                    )
+                    let uploadedVideoURL = makeAbsoluteReelURL(uploadedVideo.url)
+
+                    let influence = try await GenerationService.shared.startInfluenceReel(
+                        topic: topic,
+                        duration: duration,
+                        influencerId: influencerId,
+                        referenceVideoUrl: uploadedVideoURL,
+                        userId: userId
+                    )
+
+                    try await pollInfluenceResult(
+                        generationID: generation.id,
+                        influenceID: influence.id
+                    )
+                } else {
+                    let response = try await GenerationService.shared.generateReel(
+                        topic: topic,
+                        language: language,
+                        duration: duration,
+                        influencerId: influencerId,
+                        referenceVideoUrl: nil
+                    )
+
+                    guard let downloadUrl = response.downloadUrl, !downloadUrl.isEmpty else {
+                        await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
+                        return
+                    }
+
+                    await GenerationService.shared.updateGeneration(
+                        id: generation.id,
+                        status: .completed,
+                        remoteVideoUrl: makeAbsoluteReelURL(downloadUrl)
+                    )
+                }
+            } catch {
+                print("[CreateViewModel] Reel generation failed: \(error)")
+                await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
             }
-
-            let absoluteVideoURL = makeAbsoluteURL(downloadUrl)
-            let generation = Generation(
-                videoName: response.hook ?? reelTopic.trimmingCharacters(in: .whitespaces),
-                videoUri: nil,
-                resultVideoUrl: absoluteVideoURL,
-                status: .completed,
-                createdAt: Date(),
-                userId: appState.userId ?? "demo-user"
-            )
-
-            await GenerationService.shared.saveGeneration(generation)
-            appState.useCredits()
-            resetReelForm()
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
         }
+
+        return true
     }
 
     // MARK: - Ad Preview
@@ -250,16 +285,43 @@ class CreateViewModel: ObservableObject {
 }
 
 private extension CreateViewModel {
-    func makeAbsoluteURL(_ path: String) -> String {
-        if path.hasPrefix("http://") || path.hasPrefix("https://") {
-            return path
-        }
-
-        return "\(APIService.shared.syncBaseURL)\(path)"
-    }
-
     func resetReelForm() {
         reelTopic = ""
         reelReferenceVideoURL = nil
     }
+}
+
+private func pollInfluenceResult(generationID: String, influenceID: String) async throws {
+    for _ in 0..<120 {
+        let status = try await GenerationService.shared.getInfluenceStatus(id: influenceID)
+
+        switch status.status {
+        case "succeeded":
+            guard let outputURL = status.outputUrl, !outputURL.isEmpty else {
+                await GenerationService.shared.updateGeneration(id: generationID, status: .failed)
+                return
+            }
+            await GenerationService.shared.updateGeneration(
+                id: generationID,
+                status: .completed,
+                remoteVideoUrl: outputURL
+            )
+            return
+        case "failed", "canceled":
+            await GenerationService.shared.updateGeneration(id: generationID, status: .failed)
+            return
+        default:
+            try await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+    }
+
+    await GenerationService.shared.updateGeneration(id: generationID, status: .failed)
+}
+
+private func makeAbsoluteReelURL(_ path: String) -> String {
+    if path.hasPrefix("http://") || path.hasPrefix("https://") {
+        return path
+    }
+
+    return "\(APIService.shared.syncBaseURL)\(path)"
 }

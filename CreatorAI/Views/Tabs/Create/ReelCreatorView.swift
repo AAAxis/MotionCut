@@ -5,6 +5,7 @@ struct ReelCreatorView: View {
     @ObservedObject var viewModel: CreateViewModel
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
+    @State private var showLaunchCelebration = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -58,6 +59,13 @@ struct ReelCreatorView: View {
                 dismissKeyboard()
                 Task {
                     if await viewModel.generateReel(appState: appState) {
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.78)) {
+                            showLaunchCelebration = true
+                        }
+                        try? await Task.sleep(nanoseconds: 900_000_000)
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showLaunchCelebration = false
+                        }
                         NotificationCenter.default.post(name: .switchToLibraryTab, object: nil)
                     }
                 }
@@ -87,6 +95,69 @@ struct ReelCreatorView: View {
             }
             .disabled(viewModel.isLoading)
         }
+        .overlay {
+            if showLaunchCelebration {
+                ReelLaunchCelebrationView()
+                    .transition(.opacity.combined(with: .scale))
+            }
+        }
+    }
+}
+
+private struct ReelLaunchCelebrationView: View {
+    @State private var animate = false
+
+    private let colors: [Color] = [
+        .yellow, .orange, .red, .blue, .green, .pink
+    ]
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.black.opacity(0.16)
+                    .ignoresSafeArea()
+
+                ForEach(0..<18, id: \.self) { index in
+                    Circle()
+                        .fill(colors[index % colors.count])
+                        .frame(width: 10, height: 10)
+                        .offset(y: animate ? -220 - CGFloat(index * 8) : 20)
+                        .offset(x: animate ? horizontalOffset(for: index) : 0)
+                        .opacity(animate ? 0 : 1)
+                        .animation(
+                            .easeOut(duration: 0.9).delay(Double(index) * 0.015),
+                            value: animate
+                        )
+                }
+
+                VStack(spacing: 12) {
+                    Image(systemName: "rocket.fill")
+                        .font(.system(size: 42))
+                        .foregroundStyle(.white, .orange)
+                        .rotationEffect(.degrees(animate ? 0 : -18))
+                        .offset(y: animate ? -90 : 10)
+                        .scaleEffect(animate ? 1.15 : 0.8)
+                        .shadow(color: .orange.opacity(0.35), radius: 16, y: 10)
+
+                    Text("Video Started")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                        .opacity(animate ? 1 : 0.4)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.72)) {
+                animate = true
+            }
+        }
+    }
+
+    private func horizontalOffset(for index: Int) -> CGFloat {
+        let spread: [CGFloat] = [-120, -90, -70, -48, -24, 0, 24, 48, 70, 90, 120]
+        return spread[index % spread.count]
     }
 }
 

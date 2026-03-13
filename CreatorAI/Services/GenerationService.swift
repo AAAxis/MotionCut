@@ -36,6 +36,35 @@ struct ReelGenerateResponse: Codable {
     let downloadUrl: String?
 }
 
+struct InfluenceStartResponse: Codable {
+    let success: Bool?
+    let id: String
+    let status: String?
+    let pollUrl: String?
+}
+
+struct InfluenceStatusResponse: Codable {
+    let id: String
+    let status: String
+    let outputUrl: String?
+    let topic: String?
+    let duration: Int?
+    let createdAt: String?
+    let completedAt: String?
+}
+
+struct UploadedVideoResponse: Codable {
+    let id: String
+    let url: String
+    let filename: String?
+    let duration: Double?
+    let width: Int?
+    let height: Int?
+    let fps: Int?
+    let fileSize: Int?
+    let status: String?
+}
+
 struct PreviewRequest: Encodable {
     let url: String
 }
@@ -101,8 +130,109 @@ actor GenerationService {
             influencerId: influencerId,
             referenceVideoUrl: referenceVideoUrl
         )
+        let baseURL = api.baseURL
+        guard let url = URL(string: "\(baseURL)/api/reels/generate") else {
+            throw APIError.invalidURL
+        }
 
-        return try await api.post("/api/reels/generate", body: request)
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 600
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.noData
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(ReelGenerateResponse.self, from: data)
+    }
+
+    func uploadReferenceVideo(fileURL: URL, userId: String) async throws -> UploadedVideoResponse {
+        let baseURL = api.baseURL
+        guard let url = URL(string: "\(baseURL)/api/uploads/video") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 600
+
+        let boundary = UUID().uuidString
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        let fileData = try Data(contentsOf: fileURL)
+        let filename = fileURL.lastPathComponent.isEmpty ? "\(UUID().uuidString).mp4" : fileURL.lastPathComponent
+        let mimeType = "video/mp4"
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"userId\"\r\n\r\n".data(using: .utf8)!)
+        body.append("\(userId)\r\n".data(using: .utf8)!)
+
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"video\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
+        body.append(fileData)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+
+        request.httpBody = body
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.noData
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(UploadedVideoResponse.self, from: data)
+    }
+
+    func startInfluenceReel(
+        topic: String,
+        duration: Int,
+        influencerId: String?,
+        referenceVideoUrl: String,
+        userId: String
+    ) async throws -> InfluenceStartResponse {
+        let baseURL = api.baseURL
+        guard let url = URL(string: "\(baseURL)/api/reels/influence") else {
+            throw APIError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 120
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "topic": topic,
+            "duration": duration,
+            "influencerId": influencerId as Any,
+            "referenceVideoUrl": referenceVideoUrl,
+            "userId": userId,
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.noData
+        }
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(InfluenceStartResponse.self, from: data)
+    }
+
+    func getInfluenceStatus(id: String) async throws -> InfluenceStatusResponse {
+        let response: InfluenceStatusResponse = try await api.get("/api/reels/influence/status/\(id)")
+        return response
     }
 
     // MARK: - Video Ad
