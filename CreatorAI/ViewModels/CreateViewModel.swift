@@ -44,13 +44,22 @@ struct InfluencerAvatar: Identifiable {
     let iconName: String
 }
 
-let PRESET_AVATARS: [InfluencerAvatar] = [
-    InfluencerAvatar(id: "avatar_1", name: "Alex", iconName: "person.crop.circle.fill"),
-    InfluencerAvatar(id: "avatar_2", name: "Jordan", iconName: "person.crop.circle.fill"),
-    InfluencerAvatar(id: "avatar_3", name: "Sam", iconName: "person.crop.circle.fill"),
-    InfluencerAvatar(id: "avatar_4", name: "Riley", iconName: "person.crop.circle.fill"),
-    InfluencerAvatar(id: "avatar_5", name: "Casey", iconName: "person.crop.circle.fill"),
+struct AIModelOption: Identifiable {
+    let id: String        // replicate model id e.g. "kwaivgi/kling-v2.1"
+    let name: String
+    let imageURL: String  // cover image URL from Replicate
+    let runCount: Int
+}
+
+let PRESET_AI_MODELS: [AIModelOption] = [
+    AIModelOption(id: "kwaivgi/kling-v2.1", name: "Kling v2.1", imageURL: "https://tjzk.replicate.delivery/models_models_featured_image/a7690882-d1d2-44fb-b487-f41bd367adcf/replicate-prediction-2epyczsz.webp", runCount: 3_600_000),
+    AIModelOption(id: "bytedance/seedance-1-lite", name: "Seedance Lite", imageURL: "https://tjzk.replicate.delivery/models_models_featured_image/961a33d5-e27a-4b15-8cdd-3e37d5375297/replicate-seedance-1-lite.webp", runCount: 2_800_000),
+    AIModelOption(id: "bytedance/seedance-1-pro", name: "Seedance Pro", imageURL: "https://tjzk.replicate.delivery/models_models_featured_image/b11bb650-a993-485b-b433-f1ba1c4cb90b/replicate-seedance-1-pro.webp", runCount: 1_700_000),
+    AIModelOption(id: "kwaivgi/kling-v1.6-standard", name: "Kling v1.6", imageURL: "https://tjzk.replicate.delivery/models_models_featured_image/5b9d5726-ee87-4881-94e8-71e118d2dd4e/replicate-prediction-_F2jima2.webp", runCount: 1_500_000),
 ]
+
+// Keep old preset for backward compat
+let PRESET_AVATARS: [InfluencerAvatar] = []
 
 let AD_STYLES: [StyleOption] = [
     StyleOption(id: "modern", label: "Modern", icon: "sparkles"),

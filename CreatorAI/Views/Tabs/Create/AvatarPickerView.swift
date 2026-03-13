@@ -4,8 +4,8 @@ import PhotosUI
 struct UploadedAvatar: Identifiable {
     let id: String
     let name: String
-    let url: String       // server path like /uploads/avatar_xxx.jpg
-    var image: UIImage?   // local preview
+    let url: String
+    var image: UIImage?
 }
 
 struct AvatarPickerView: View {
@@ -16,43 +16,52 @@ struct AvatarPickerView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var uploadedAvatars: [UploadedAvatar] = []
     @State private var isUploading = false
-    @State private var showPhotoPicker = false
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
-                // 1. CREATE OWN — always first
-                PhotosPicker(
-                    selection: $selectedPhotoItem,
-                    matching: .images,
-                    photoLibrary: .shared()
-                ) {
-                    VStack(spacing: 6) {
-                        if isUploading {
-                            ProgressView()
-                                .frame(width: 32, height: 32)
-                        } else {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 28))
-                                .foregroundColor(theme.primary)
+                // 1–4: AI Models from Replicate
+                ForEach(PRESET_AI_MODELS) { model in
+                    Button {
+                        viewModel.reelInfluencerId = model.id
+                    } label: {
+                        VStack(spacing: 6) {
+                            AsyncImage(url: URL(string: model.imageURL)) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                case .failure:
+                                    Image(systemName: "film.fill")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(theme.textSecondary)
+                                        .frame(width: 48, height: 48)
+                                default:
+                                    ProgressView()
+                                        .frame(width: 48, height: 48)
+                                }
+                            }
+                            Text(model.name)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(viewModel.reelInfluencerId == model.id ? theme.primary : theme.text)
+                                .lineLimit(1)
                         }
-                        Text("Create own")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(theme.primary)
+                        .frame(width: 72, height: 72)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(viewModel.reelInfluencerId == model.id ? theme.primary.opacity(0.12) : theme.surfaceElevated)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(viewModel.reelInfluencerId == model.id ? theme.primary : theme.border, lineWidth: viewModel.reelInfluencerId == model.id ? 2 : 1)
+                                )
+                        )
                     }
-                    .frame(width: 72, height: 72)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(theme.primary.opacity(0.12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(theme.primary, lineWidth: 2)
-                            )
-                    )
                 }
-                .disabled(isUploading)
                 
-                // 2. User's uploaded avatars
+                // User's previously uploaded avatars
                 ForEach(uploadedAvatars) { avatar in
                     Button {
                         viewModel.reelInfluencerId = avatar.id
@@ -63,7 +72,7 @@ struct AvatarPickerView: View {
                                     .resizable()
                                     .scaledToFill()
                                     .frame(width: 48, height: 48)
-                                    .clipShape(Circle())
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                             } else {
                                 AsyncImage(url: URL(string: "\(APIService.shared.syncBaseURL)\(avatar.url)")) { phase in
                                     switch phase {
@@ -72,11 +81,12 @@ struct AvatarPickerView: View {
                                             .resizable()
                                             .scaledToFill()
                                             .frame(width: 48, height: 48)
-                                            .clipShape(Circle())
+                                            .clipShape(RoundedRectangle(cornerRadius: 10))
                                     default:
                                         Image(systemName: "person.crop.circle.fill")
-                                            .font(.system(size: 32))
+                                            .font(.system(size: 24))
                                             .foregroundColor(theme.textSecondary)
+                                            .frame(width: 48, height: 48)
                                     }
                                 }
                             }
@@ -97,30 +107,42 @@ struct AvatarPickerView: View {
                     }
                 }
                 
-                // 3. Preset avatars
-                ForEach(PRESET_AVATARS) { avatar in
-                    Button {
-                        viewModel.reelInfluencerId = avatar.id
-                    } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: avatar.iconName)
-                                .font(.system(size: 32))
-                                .foregroundColor(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.textSecondary)
-                            Text(avatar.name)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.text)
+                // 5th: CREATE OWN — upload photo (always last)
+                PhotosPicker(
+                    selection: $selectedPhotoItem,
+                    matching: .images,
+                    photoLibrary: .shared()
+                ) {
+                    VStack(spacing: 6) {
+                        if isUploading {
+                            ProgressView()
+                                .frame(width: 48, height: 48)
+                        } else {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(theme.primary.opacity(0.15))
+                                    .frame(width: 48, height: 48)
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 22))
+                                    .foregroundColor(theme.primary)
+                            }
                         }
-                        .frame(width: 72, height: 72)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(viewModel.reelInfluencerId == avatar.id ? theme.primary.opacity(0.12) : theme.surfaceElevated)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .stroke(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.border, lineWidth: viewModel.reelInfluencerId == avatar.id ? 2 : 1)
-                                )
-                        )
+                        Text("Your photo")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(theme.primary)
                     }
+                    .frame(width: 72, height: 72)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(theme.primary.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                                    .foregroundColor(theme.primary.opacity(0.5))
+                            )
+                    )
                 }
+                .disabled(isUploading)
             }
         }
         .onChange(of: selectedPhotoItem) { newItem in
@@ -128,6 +150,10 @@ struct AvatarPickerView: View {
             Task { await handleImagePick(item) }
         }
         .onAppear {
+            // Default to first AI model
+            if viewModel.reelInfluencerId.hasPrefix("avatar_") || viewModel.reelInfluencerId == "custom" {
+                viewModel.reelInfluencerId = PRESET_AI_MODELS.first?.id ?? ""
+            }
             Task { await loadUploadedAvatars() }
         }
     }
@@ -144,19 +170,12 @@ struct AvatarPickerView: View {
         guard let data = try? await item.loadTransferable(type: Data.self) else { return }
         guard let uiImage = UIImage(data: data) else { return }
         
-        // Resize to max 1024px to save bandwidth
         let resized = resizeImage(uiImage, maxSize: 1024)
         guard let jpegData = resized.jpegData(compressionQuality: 0.85) else { return }
         
-        // Upload to server
         do {
             let result = try await uploadAvatarImage(jpegData: jpegData, filename: "avatar_\(UUID().uuidString).jpg")
-            let avatar = UploadedAvatar(
-                id: result.id,
-                name: result.name,
-                url: result.url,
-                image: resized
-            )
+            let avatar = UploadedAvatar(id: result.id, name: result.name, url: result.url, image: resized)
             await MainActor.run {
                 uploadedAvatars.insert(avatar, at: 0)
                 viewModel.reelInfluencerId = avatar.id
@@ -177,18 +196,15 @@ struct AvatarPickerView: View {
         
         var body = Data()
         
-        // userId field
         let userId = appState.userId ?? "demo-user"
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"userId\"\r\n\r\n".data(using: .utf8)!)
         body.append("\(userId)\r\n".data(using: .utf8)!)
         
-        // name field
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"name\"\r\n\r\n".data(using: .utf8)!)
-        body.append("Custom\r\n".data(using: .utf8)!)
+        body.append("My photo\r\n".data(using: .utf8)!)
         
-        // image file
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"image\"; filename=\"\(filename)\"\r\n".data(using: .utf8)!)
         body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
@@ -208,8 +224,6 @@ struct AvatarPickerView: View {
         let response = try JSONDecoder().decode(UploadResponse.self, from: data)
         return (id: response.id, name: response.name, url: response.url)
     }
-    
-    // MARK: - Load Previous Avatars
     
     private func loadUploadedAvatars() async {
         let userId = appState.userId ?? "demo-user"
@@ -236,8 +250,6 @@ struct AvatarPickerView: View {
             print("Failed to load avatars: \(error)")
         }
     }
-    
-    // MARK: - Resize Helper
     
     private func resizeImage(_ image: UIImage, maxSize: CGFloat) -> UIImage {
         let size = image.size
