@@ -132,7 +132,7 @@ class CreateViewModel: ObservableObject {
     // Common
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var showPaywall = false
+    @Published var showBuyCredits = false
 
     enum AdStep {
         case input, preview, generating
@@ -142,7 +142,7 @@ class CreateViewModel: ObservableObject {
 
     func checkCredits(_ appState: AppState) -> Bool {
         if appState.canGenerate { return true }
-        showPaywall = true
+        showBuyCredits = true
         return false
     }
 
@@ -168,7 +168,7 @@ class CreateViewModel: ObservableObject {
         )
 
         await GenerationService.shared.saveGeneration(generation)
-        appState.useCredits()
+        // Credits deducted server-side
 
         let language = reelLang
         let duration = reelDuration
@@ -307,7 +307,7 @@ class CreateViewModel: ObservableObject {
                 duration: adDuration,
                 style: adStyle
             )
-            appState.useCredits()
+            // Credits deducted server-side
             isLoading = false
             return (id: generationId, title: adPreview?.title ?? "Video Ad")
         } catch {

@@ -1,5 +1,4 @@
 import SwiftUI
-import RevenueCatUI
 
 struct CreateView: View {
     @EnvironmentObject var appState: AppState
@@ -9,11 +8,34 @@ struct CreateView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Header
-                Text("Create")
-                    .font(.system(size: 29, weight: .semibold))
-                    .foregroundColor(theme.text)
-                    .padding(.bottom, 8)
+                // Header with credits
+                HStack {
+                    Text("Create")
+                        .font(.system(size: 29, weight: .semibold))
+                        .foregroundColor(theme.text)
+
+                    Spacer()
+
+                    // Credits badge
+                    Button {
+                        viewModel.showBuyCredits = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "star.circle.fill")
+                                .font(.system(size: 16))
+                            Text("\(appState.credits)")
+                                .font(.system(size: 15, weight: .bold, design: .rounded))
+                        }
+                        .foregroundColor(appState.credits > 0 ? theme.primary : .red)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(appState.credits > 0 ? theme.primary.opacity(0.12) : Color.red.opacity(0.12))
+                        )
+                    }
+                }
+                .padding(.bottom, 8)
 
                 // Mode Toggle
                 HStack(spacing: 0) {
@@ -65,16 +87,11 @@ struct CreateView: View {
         } message: {
             Text(viewModel.errorMessage ?? "")
         }
-        .sheet(isPresented: $viewModel.showPaywall) {
-            PaywallView()
-                .onPurchaseCompleted { _ in
-                    appState.isSubscribed = true
-                    viewModel.showPaywall = false
-                }
-                .onRestoreCompleted { _ in
-                    appState.isSubscribed = true
-                    viewModel.showPaywall = false
-                }
+        .sheet(isPresented: $viewModel.showBuyCredits) {
+            BuyCreditsView()
+        }
+        .onAppear {
+            Task { await appState.fetchCredits() }
         }
     }
 }
