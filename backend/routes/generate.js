@@ -20,6 +20,7 @@ const { listVoices, VOICES } = require('../services/voiceover');
 // POST /api/generate — Start a new video generation
 router.post('/', async (req, res) => {
   const { url, prompt, userId, options = {} } = req.body;
+  if (!options.duration) options.duration = 30; // Default to 30s if not specified
 
   if (!url) {
     return res.status(400).json({ error: 'URL is required' });

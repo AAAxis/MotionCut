@@ -98,36 +98,7 @@ struct AdCreatorView: View {
             }
             .padding(.bottom, 20)
 
-            // Duration
-            SectionLabel("DURATION")
-            HStack(spacing: 10) {
-                ForEach(AD_DURATIONS) { d in
-                    Button {
-                        viewModel.adDuration = d.value
-                        viewModel.adScenes = d.value == 15 ? 3 : d.value == 30 ? 5 : 8
-                    } label: {
-                        VStack(spacing: 2) {
-                            Text(d.label)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(viewModel.adDuration == d.value ? theme.primary : theme.text)
-                            Text(d.desc)
-                                .font(.system(size: 12))
-                                .foregroundColor(theme.textTertiary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(viewModel.adDuration == d.value ? theme.primary.opacity(0.08) : theme.surfaceElevated)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(viewModel.adDuration == d.value ? theme.primary : theme.border, lineWidth: 1.5)
-                                )
-                        )
-                    }
-                }
-            }
-            .padding(.bottom, 24)
+
 
             // Preview Card
             if let preview = viewModel.adPreview, viewModel.adStep != .input {

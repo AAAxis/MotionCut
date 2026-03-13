@@ -100,35 +100,7 @@ struct ReelCreatorView: View {
             ReferenceVideoPickerView(referenceVideoURL: $viewModel.reelReferenceVideoURL)
                 .padding(.bottom, 20)
 
-            // Duration
-            SectionLabel("DURATION")
-            HStack(spacing: 10) {
-                ForEach(REEL_DURATIONS) { d in
-                    Button {
-                        viewModel.reelDuration = d.value
-                    } label: {
-                        VStack(spacing: 2) {
-                            Text(d.label)
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(viewModel.reelDuration == d.value ? theme.primary : theme.text)
-                            Text(d.desc)
-                                .font(.system(size: 12))
-                                .foregroundColor(theme.textTertiary)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(viewModel.reelDuration == d.value ? theme.primary.opacity(0.08) : theme.surfaceElevated)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(viewModel.reelDuration == d.value ? theme.primary : theme.border, lineWidth: 1.5)
-                                )
-                        )
-                    }
-                }
-            }
-            .padding(.bottom, 24)
+
 
             // Progress Steps
             if viewModel.isLoading, let progress = viewModel.genProgress {

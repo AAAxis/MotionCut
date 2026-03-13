@@ -60,17 +60,7 @@ let AD_STYLES: [StyleOption] = [
     StyleOption(id: "playful", label: "Playful", icon: "paintpalette.fill"),
 ]
 
-let AD_DURATIONS: [DurationOption] = [
-    DurationOption(value: 15, label: "15s", desc: "Story/Reel"),
-    DurationOption(value: 30, label: "30s", desc: "Standard"),
-    DurationOption(value: 60, label: "60s", desc: "Extended"),
-]
 
-let REEL_DURATIONS: [DurationOption] = [
-    DurationOption(value: 7, label: "7s", desc: "Quick"),
-    DurationOption(value: 10, label: "10s", desc: "Standard"),
-    DurationOption(value: 15, label: "15s", desc: "Max"),
-]
 
 let LANGUAGES: [LanguageOption] = [
     LanguageOption(id: "en", label: "English", flag: "US"),
