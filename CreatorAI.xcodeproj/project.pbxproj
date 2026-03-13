@@ -56,6 +56,7 @@
 		B47D8F198CCC3C442B272C23 /* ThumbnailService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 979EA094F9764B8AEBA52A37 /* ThumbnailService.swift */; };
 		B5CE622E490CC1658C8BD974 /* AppsFlyerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2917CCB6F2CB4C8992687626 /* AppsFlyerService.swift */; };
 		B77EA5CCD24B9D9B36BA5889 /* SubtitlesTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D07A138B6D409340FB324035 /* SubtitlesTabView.swift */; };
+		B8A41F1294C84F1781C26F31 /* AvatarPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8A41F1194C84F1781C26F31 /* AvatarPickerView.swift */; };
 		BDDC8D4873ABB2033059DEDB /* ReelCreatorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F375B060DD7FED30C6072A99 /* ReelCreatorView.swift */; };
 		BFC50007D4297FEB53B86AE3 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24E9806389799E36472F434 /* OnboardingView.swift */; };
 		C61F10799A9D85C7636A4205 /* CreditsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781881BCD147AB662A5C44DE /* CreditsService.swift */; };
@@ -108,6 +109,7 @@
 		9DAE0EED48830AFD0CEC97F2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		A24E9806389799E36472F434 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		AE133AEBE256132741D65A31 /* CompressTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompressTabView.swift; sourceTree = "<group>"; };
+		B8A41F1194C84F1781C26F31 /* AvatarPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarPickerView.swift; sourceTree = "<group>"; };
 		B28178A52531EEF2A1B4DC29 /* VideoPreviewModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPreviewModal.swift; sourceTree = "<group>"; };
 		BAC3FFF122DB6FBA3E728ABB /* ProcessingModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingModalView.swift; sourceTree = "<group>"; };
 		BE68B4D6697300F42DA56CAA /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
@@ -280,6 +282,7 @@
 			isa = PBXGroup;
 			children = (
 				84809B72C5009C12C20B5565 /* AdCreatorView.swift */,
+				B8A41F1194C84F1781C26F31 /* AvatarPickerView.swift */,
 				4602FA833E766F62211E6B90 /* CreateView.swift */,
 				F375B060DD7FED30C6072A99 /* ReelCreatorView.swift */,
 			);
@@ -465,6 +468,7 @@
 				BFC50007D4297FEB53B86AE3 /* OnboardingView.swift in Sources */,
 				6C613F02D9FC72B028FA56E8 /* ProcessingModalView.swift in Sources */,
 				A1E533FF37138DCDBD7700A8 /* PurchaseService.swift in Sources */,
+				B8A41F1294C84F1781C26F31 /* AvatarPickerView.swift in Sources */,
 				BDDC8D4873ABB2033059DEDB /* ReelCreatorView.swift in Sources */,
 				808748342A1C4952EA383BA4 /* SettingsView.swift in Sources */,
 				8F8060D05EB5A009EC3EFDC3 /* SettingsViewModel.swift in Sources */,
