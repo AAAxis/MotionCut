@@ -15,41 +15,43 @@ struct ReelCreatorView: View {
 
             // Topic Input
             SectionLabel("TOPIC / CONCEPT")
-            TextEditor(text: $viewModel.reelTopic)
-                .frame(minHeight: 80)
-                .font(.system(size: 16))
-                .foregroundColor(theme.text)
-                .scrollContentBackground(.hidden)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(theme.surfaceElevated)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(theme.border, lineWidth: 1)
-                        )
-                )
-                .overlay(alignment: .topLeading) {
-                    if viewModel.reelTopic.isEmpty {
-                        Text("e.g. traveling without eSIM, hustle culture, Monday motivation...")
-                            .font(.system(size: 16))
-                            .foregroundColor(theme.textTertiary)
-                            .padding(.horizontal, 18)
-                            .padding(.vertical, 18)
-                            .allowsHitTesting(false)
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: $viewModel.reelTopic)
+                    .frame(minHeight: 80)
+                    .font(.system(size: 16))
+                    .foregroundColor(theme.text)
+                    .scrollContentBackground(.hidden)
+                    .overlay(alignment: .topLeading) {
+                        if viewModel.reelTopic.isEmpty {
+                            Text("e.g. traveling without eSIM, hustle culture, Monday motivation...")
+                                .font(.system(size: 16))
+                                .foregroundColor(theme.textTertiary)
+                                .padding(.top, 8)
+                                .padding(.leading, 4)
+                                .allowsHitTesting(false)
+                        }
                     }
-                }
+
+                ReferenceVideoPickerView(
+                    referenceVideoURL: $viewModel.reelReferenceVideoURL,
+                    style: .inlineAttachment
+                )
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(theme.surfaceElevated)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(theme.border, lineWidth: 1)
+                    )
+            )
                 .padding(.bottom, 20)
 
             // Influencer / Avatar
             SectionLabel("INFLUENCER / AVATAR")
             AvatarPickerView(viewModel: viewModel)
-                .padding(.bottom, 20)
-
-            // Reference video (for movement)
-            SectionLabel("REFERENCE VIDEO (copy movement)")
-            ReferenceVideoPickerView(referenceVideoURL: $viewModel.reelReferenceVideoURL)
                 .padding(.bottom, 20)
 
 
@@ -153,7 +155,13 @@ struct ReelCreatorView: View {
 // MARK: - Reference Video Picker (for movement copy)
 
 struct ReferenceVideoPickerView: View {
+    enum Style {
+        case fullWidth
+        case inlineAttachment
+    }
+
     @Binding var referenceVideoURL: URL?
+    var style: Style = .fullWidth
     @Environment(\.theme) var theme
     @State private var selectedItem: PhotosPickerItem?
     @State private var thumbnailImage: UIImage?
@@ -214,23 +222,7 @@ struct ReferenceVideoPickerView: View {
                     matching: .videos,
                     photoLibrary: .shared()
                 ) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "video.badge.plus")
-                            .font(.system(size: 22))
-                        Text("Upload video to copy movement")
-                            .font(.system(size: 15, weight: .medium))
-                    }
-                    .foregroundColor(theme.primary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(theme.primary.opacity(0.12))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .stroke(theme.primary.opacity(0.5), lineWidth: 1.5)
-                            )
-                    )
+                    attachmentButtonLabel
                 }
                 .onChange(of: selectedItem) { newItem in
                     Task {
@@ -251,6 +243,48 @@ struct ReferenceVideoPickerView: View {
             if let url = url, thumbnailImage == nil {
                 loadThumbnail(for: url)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var attachmentButtonLabel: some View {
+        switch style {
+        case .fullWidth:
+            HStack(spacing: 10) {
+                Image(systemName: "video.badge.plus")
+                    .font(.system(size: 22))
+                Text("Upload video to copy movement")
+                    .font(.system(size: 15, weight: .medium))
+            }
+            .foregroundColor(theme.primary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(theme.primary.opacity(0.12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(theme.primary.opacity(0.5), lineWidth: 1.5)
+                    )
+            )
+        case .inlineAttachment:
+            HStack(spacing: 8) {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("Add movement video")
+                    .font(.system(size: 14, weight: .medium))
+            }
+            .foregroundColor(theme.primary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                Capsule()
+                    .fill(theme.primary.opacity(0.12))
+                    .overlay(
+                        Capsule()
+                            .stroke(theme.primary.opacity(0.35), lineWidth: 1)
+                    )
+            )
         }
     }
 

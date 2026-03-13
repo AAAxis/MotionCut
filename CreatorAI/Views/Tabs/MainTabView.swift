@@ -4,7 +4,7 @@ struct MainTabView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @State private var navigationPath = NavigationPath()
-    @State private var selectedTab = 0
+    @State private var selectedTab = 1
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
