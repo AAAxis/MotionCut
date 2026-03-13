@@ -31,8 +31,10 @@ actor APIService {
     let baseURL: String
     
     // Non-isolated accessor for use in synchronous contexts (e.g. AsyncImage URLs)
+    // Always use HTTPS for image loading (ATS blocks HTTP)
     nonisolated var syncBaseURL: String {
-        ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+        let base = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+        return base.replacingOccurrences(of: "http://", with: "https://")
     }
 
     private init() {
