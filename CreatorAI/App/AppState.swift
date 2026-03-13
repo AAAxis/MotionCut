@@ -7,39 +7,17 @@ class AppState: ObservableObject {
     @Published var userId: String?
     @Published var userEmail: String?
     @Published var token: String?
-    @Published var isSubscribed = false
-    @Published var credits: Int = 3
+    @Published var credits: Int = 0
     @Published var hasSeenOnboarding: Bool
-    /// Set when app is opened via deeplink; MainTabView applies and clears.
     @Published var pendingDeeplink: DeeplinkAction?
+    @Published var isLoadingCredits = false
 
     private let keychainService = "com.creatorai.auth"
-    private var purchaseCancellable: AnyCancellable?
-    static let creditCost = 3
 
     init() {
         self.hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
-        self.credits = UserDefaults.standard.object(forKey: "user_credits") as? Int ?? 3
+        self.credits = UserDefaults.standard.object(forKey: "user_credits") as? Int ?? 0
         loadToken()
-        // Configure RevenueCat at launch so the paywall can open even before login
-        if let userIdData = KeychainHelper.load(service: keychainService, account: "userId"),
-           let userId = String(data: userIdData, encoding: .utf8) {
-            PurchaseService.shared.configure(userId: userId)
-        } else {
-            let key = "RevenueCatAnonymousId"
-            let anonymousId = UserDefaults.standard.string(forKey: key) ?? {
-                let id = UUID().uuidString
-                UserDefaults.standard.set(id, forKey: key)
-                return id
-            }()
-            PurchaseService.shared.configure(userId: anonymousId)
-        }
-        // Keep AppState.isSubscribed in sync with RevenueCat so we remember the purchase
-        purchaseCancellable = PurchaseService.shared.$isSubscribed
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] subscribed in
-                self?.isSubscribed = subscribed
-            }
     }
 
     func loadToken() {
@@ -51,7 +29,6 @@ class AppState: ObservableObject {
             if let userIdData = KeychainHelper.load(service: keychainService, account: "userId"),
                let userId = String(data: userIdData, encoding: .utf8) {
                 self.userId = userId
-                PurchaseService.shared.configure(userId: userId)
             }
             if let emailData = KeychainHelper.load(service: keychainService, account: "userEmail"),
                let email = String(data: emailData, encoding: .utf8) {
@@ -72,9 +49,8 @@ class AppState: ObservableObject {
         } else {
             KeychainHelper.delete(service: keychainService, account: "userEmail")
         }
-
-        // Configure RevenueCat with the authenticated user
-        PurchaseService.shared.configure(userId: userId)
+        // Fetch credits from server
+        Task { await fetchCredits() }
     }
 
     func logout() {
@@ -82,22 +58,52 @@ class AppState: ObservableObject {
         self.userId = nil
         self.userEmail = nil
         self.isAuthenticated = false
-        self.isSubscribed = false
-        self.credits = 3
-        UserDefaults.standard.set(3, forKey: "user_credits")
+        self.credits = 0
+        UserDefaults.standard.set(0, forKey: "user_credits")
         KeychainHelper.delete(service: keychainService, account: "jwt")
         KeychainHelper.delete(service: keychainService, account: "userId")
         KeychainHelper.delete(service: keychainService, account: "userEmail")
     }
 
-    var canGenerate: Bool {
-        isSubscribed || credits >= AppState.creditCost
+    // MARK: - Credits (server-side)
+
+    func fetchCredits() async {
+        guard let userId = userId else { return }
+        isLoadingCredits = true
+        defer { isLoadingCredits = false }
+
+        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+        guard let url = URL(string: "\(baseURL)/api/credits/get") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["userId": userId])
+
+        do {
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let serverCredits = json["credits"] as? Int {
+                self.credits = serverCredits
+                UserDefaults.standard.set(serverCredits, forKey: "user_credits")
+            }
+        } catch {
+            print("[Credits] Failed to fetch: \(error)")
+        }
     }
 
-    func useCredits() {
-        guard !isSubscribed else { return }
-        credits = max(0, credits - AppState.creditCost)
+    func addCredits(_ amount: Int) {
+        credits += amount
         UserDefaults.standard.set(credits, forKey: "user_credits")
+    }
+
+    func deductCredits(_ amount: Int) {
+        credits = max(0, credits - amount)
+        UserDefaults.standard.set(credits, forKey: "user_credits")
+    }
+
+    var canGenerate: Bool {
+        credits > 0
     }
 
     func completeOnboarding() {

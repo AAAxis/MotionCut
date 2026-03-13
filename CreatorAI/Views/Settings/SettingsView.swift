@@ -1,6 +1,5 @@
 import SwiftUI
 import StoreKit
-import RevenueCatUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -10,7 +9,7 @@ struct SettingsView: View {
 
     var showCloseButton: Bool
 
-    @State private var showPaywall = false
+    @State private var showBuyCredits = false
     @State private var showRedeemCode = false
     @State private var authLoading = false
     @State private var authError: String?
@@ -34,7 +33,7 @@ struct SettingsView: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 16))
                         .foregroundColor(theme.primary)
-                    Text(appState.isSubscribed ? "PRO" : "\(appState.credits) Credits")
+                    Text("\(appState.credits) Credits")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(theme.text)
                 }
@@ -178,68 +177,49 @@ struct SettingsView: View {
                         HStack(spacing: 12) {
                             Image(systemName: "crown.fill")
                                 .font(.system(size: 24))
-                                .foregroundColor(viewModel.isSubscribed ? .white : theme.primary)
+                                .foregroundColor(theme.primary)
 
-                            Text(viewModel.isSubscribed ? "Premium Active" : "Free Plan")
+                            Text("Credits")
                                 .font(.system(size: 20, weight: .semibold))
-                                .foregroundColor(viewModel.isSubscribed ? .white : theme.text)
+                                .foregroundColor(theme.text)
                         }
 
-                        Text(viewModel.isSubscribed
+                        Text(false
                             ? "You have unlimited video generations"
-                            : "You have \(viewModel.credits) free credits remaining")
+                            : "You have \(appState.credits) credits remaining")
                             .font(.system(size: 14))
-                            .foregroundColor(viewModel.isSubscribed
-                                ? Color.white.opacity(0.9)
-                                : theme.textSecondary)
+                            .foregroundColor(theme.textSecondary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(24)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(viewModel.isSubscribed ? theme.primary : theme.cardBackground)
+                            .fill(theme.cardBackground)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 16)
-                                    .stroke(viewModel.isSubscribed ? theme.primary : theme.cardBorder, lineWidth: 1)
+                                    .stroke(theme.cardBorder, lineWidth: 1)
                             )
                     )
 
-                    // Upgrade Button
-                    if !viewModel.isSubscribed {
-                        Button {
-                            showPaywall = true
-                        } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: "sparkles")
-                                    .font(.system(size: 20))
-                                Text("Upgrade to Premium")
-                                    .font(.system(size: 16, weight: .semibold))
-                            }
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 18)
-                            .background(theme.primary)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        }
-                    }
-
-                    // Redeem Code Button
+                    // Buy Credits Button
                     Button {
-                        showRedeemCode = true
+                        showBuyCredits = true
                     } label: {
                         HStack(spacing: 8) {
-                            Image(systemName: "giftcard")
-                                .font(.system(size: 16))
-                            Text("Redeem Code")
-                                .font(.system(size: 15, weight: .medium))
+                            Image(systemName: "star.circle.fill")
+                                .font(.system(size: 20))
+                            Text("Buy Credits")
+                                .font(.system(size: 16, weight: .semibold))
                         }
-                        .foregroundColor(theme.textSecondary)
+                        .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                        .padding(.vertical, 18)
+                        .background(theme.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
 
                     // Info
-                    Text("Free plan includes 3 credits. Premium subscription gives you unlimited generations.")
+                    Text("New users get 10 free credits. 1 credit = 1 second of AI video.")
                         .font(.system(size: 12))
                         .foregroundColor(theme.textTertiary)
                         .multilineTextAlignment(.center)
@@ -250,21 +230,8 @@ struct SettingsView: View {
         }
         .background(theme.background.ignoresSafeArea(.all))
         .navigationBarHidden(true)
-        .sheet(isPresented: $showPaywall) {
-            PaywallView()
-                .onPurchaseCompleted { _ in
-                    viewModel.isSubscribed = true
-                    appState.isSubscribed = true
-                    showPaywall = false
-                }
-                .onRestoreCompleted { _ in
-                    viewModel.isSubscribed = true
-                    appState.isSubscribed = true
-                    showPaywall = false
-                }
-        }
-        .offerCodeRedemption(isPresented: $showRedeemCode) { _ in
-            Task { await viewModel.loadData() }
+        .sheet(isPresented: $showBuyCredits) {
+            BuyCreditsView()
         }
         .alert("Sign in failed", isPresented: .init(get: { authError != nil }, set: { if !$0 { authError = nil } })) {
             Button("OK", role: .cancel) { authError = nil }

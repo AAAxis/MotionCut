@@ -1,46 +1,32 @@
-import SwiftUI
+import Foundation
 import Combine
 
 @MainActor
 class SettingsViewModel: ObservableObject {
-    @Published var credits: Int = 3
-    @Published var totalGenerations: Int = 0
-    @Published var isSubscribed = false
-
+    @Published var credits: Int = 0
     private let userId: String
-    private let purchaseService = PurchaseService.shared
-    private var cancellable: AnyCancellable?
 
-    init(userId: String = "demo-user") {
+    init(userId: String) {
         self.userId = userId
-
-        // Observe PurchaseService subscription changes in real-time
-        cancellable = purchaseService.$isSubscribed
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] subscribed in
-                self?.isSubscribed = subscribed
-            }
     }
 
     func loadData() async {
+        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+        guard let url = URL(string: "\(baseURL)/api/credits/get") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["userId": userId])
+
         do {
-            let response = try await CreditsService.shared.fetchCredits(userId: userId)
-            credits = response.credits
-            totalGenerations = response.totalGenerations ?? 0
+            let (data, _) = try await URLSession.shared.data(for: request)
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let serverCredits = json["credits"] as? Int {
+                self.credits = serverCredits
+            }
         } catch {
-            print("Failed to load credits: \(error)")
+            print("[Settings] Failed to load credits: \(error)")
         }
-
-        // Refresh subscription status from RevenueCat
-        await purchaseService.refreshStatus()
-        isSubscribed = purchaseService.isSubscribed
-    }
-
-    func handleRestore() async -> Bool {
-        let restored = await purchaseService.restorePurchases()
-        if restored {
-            isSubscribed = true
-        }
-        return restored
     }
 }
