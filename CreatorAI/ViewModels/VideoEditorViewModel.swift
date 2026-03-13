@@ -423,6 +423,39 @@ class VideoEditorViewModel: ObservableObject {
         activeClipIndex = to
     }
 
+    private var nextClipId: Int {
+        return (clips.map(\.id).max() ?? 0) + 1
+    }
+
+    func duplicateClip(at index: Int) {
+        guard index >= 0 && index < clips.count else { return }
+        var copy = clips[index]
+        copy.id = nextClipId
+        clips.insert(copy, at: index + 1)
+        activeClipIndex = index + 1
+    }
+
+    func splitClipAtPlayhead() {
+        guard activeClipIndex >= 0 && activeClipIndex < clips.count else { return }
+        let clip = clips[activeClipIndex]
+
+        // Split at 50% of the visible trim range
+        let splitPct = (clip.trimStart + clip.trimEnd) / 2.0
+
+        var firstHalf = clip
+        firstHalf.trimEnd = splitPct
+
+        var secondHalf = clip
+        secondHalf.id = nextClipId
+        secondHalf.trimStart = splitPct
+
+        clips[activeClipIndex] = firstHalf
+        clips.insert(secondHalf, at: activeClipIndex + 1)
+        activeClipIndex = activeClipIndex + 1
+
+        if isReelMode { rebuildPlaylistIfNeeded() }
+    }
+
     // MARK: - Music
 
     func configureAudioSessionForMusic() {

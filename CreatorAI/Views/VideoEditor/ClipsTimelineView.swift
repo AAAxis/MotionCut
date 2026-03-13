@@ -6,6 +6,7 @@ import AVFoundation
 struct ClipsTimelineView: View {
     @ObservedObject var viewModel: VideoEditorViewModel
     @Environment(\.theme) var theme
+    @State private var draggedClipIndex: Int? = nil
 
     private let thumbHeight: CGFloat = 52
     private let musicRowHeight: CGFloat = 36
@@ -91,19 +92,19 @@ struct ClipsTimelineView: View {
     private var videoClipsRow: some View {
         HStack(spacing: 2) {
             ForEach(Array(viewModel.clips.enumerated()), id: \.element.id) { index, clip in
-                                FilmstripClip(
-                                    clip: clip,
-                                    index: index,
-                                    isSelected: index == viewModel.activeClipIndex,
-                                    thumbHeight: thumbHeight,
-                                    clipWidth: clipWidth(for: clip),
-                                    onTap: {
-                                        if index == viewModel.activeClipIndex {
-                                            viewModel.playAllClips()
-                                        } else {
-                                            viewModel.selectClip(at: index)
-                                        }
-                                    },
+                FilmstripClip(
+                    clip: clip,
+                    index: index,
+                    isSelected: index == viewModel.activeClipIndex,
+                    thumbHeight: thumbHeight,
+                    clipWidth: clipWidth(for: clip),
+                    onTap: {
+                        if index == viewModel.activeClipIndex {
+                            viewModel.playAllClips()
+                        } else {
+                            viewModel.selectClip(at: index)
+                        }
+                    },
                     onRemove: viewModel.clips.count > 1 ? { viewModel.removeClip(at: index) } : nil,
                     onTrimStartChanged: { delta in
                         handleTrimDrag(index: index, isStart: true, delta: delta, clip: clip)
@@ -113,6 +114,15 @@ struct ClipsTimelineView: View {
                     }
                 )
                 .id(clip.id)
+                .onDrag {
+                    draggedClipIndex = index
+                    return NSItemProvider(object: String(index) as NSString)
+                }
+                .onDrop(of: [.text], delegate: ClipDropDelegate(
+                    targetIndex: index,
+                    draggedIndex: $draggedClipIndex,
+                    viewModel: viewModel
+                ))
             }
         }
         .frame(height: thumbHeight)
@@ -423,6 +433,35 @@ struct FilmstripClip: View {
             thumbnailFrames = images.isEmpty ? [] : images
             isLoadingThumbs = false
         }
+    }
+}
+
+// MARK: - Drag & Drop Reorder
+
+struct ClipDropDelegate: DropDelegate {
+    let targetIndex: Int
+    @Binding var draggedIndex: Int?
+    let viewModel: VideoEditorViewModel
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedIndex = nil
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let from = draggedIndex, from != targetIndex else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            viewModel.reorderClips(from: from, to: targetIndex)
+        }
+        draggedIndex = targetIndex
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        return draggedIndex != nil
     }
 }
 

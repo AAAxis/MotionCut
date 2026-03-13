@@ -1,7 +1,7 @@
 import Foundation
 
 struct Clip: Identifiable, Codable, Equatable {
-    let id: Int
+    var id: Int
     var uri: String
     var name: String
     var mimeType: String

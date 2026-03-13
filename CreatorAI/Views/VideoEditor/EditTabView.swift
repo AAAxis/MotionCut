@@ -82,6 +82,30 @@ struct EditTabView: View {
                         .disabled(viewModel.activeClipIndex >= viewModel.clips.count - 1)
                     }
                 }
+                    // Clip Actions
+                    Divider().background(theme.border)
+
+                    HStack(spacing: 16) {
+                        // Split at playhead
+                        EditActionButton(icon: "scissors", label: "Split") {
+                            viewModel.splitClipAtPlayhead()
+                        }
+
+                        // Duplicate clip
+                        EditActionButton(icon: "doc.on.doc", label: "Duplicate") {
+                            viewModel.duplicateClip(at: viewModel.activeClipIndex)
+                        }
+
+                        // Delete clip
+                        if viewModel.clips.count > 1 {
+                            EditActionButton(icon: "trash", label: "Delete", isDestructive: true) {
+                                viewModel.removeClip(at: viewModel.activeClipIndex)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                }
             } else {
                 Text("No clip selected")
                     .font(.system(size: 15))
@@ -90,5 +114,30 @@ struct EditTabView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+    }
+}
+
+struct EditActionButton: View {
+    let icon: String
+    let label: String
+    var isDestructive: Bool = false
+    let action: () -> Void
+    @Environment(\.theme) var theme
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(isDestructive ? .red : theme.text)
+            .frame(width: 60, height: 50)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(theme.surfaceElevated)
+            )
+        }
     }
 }
