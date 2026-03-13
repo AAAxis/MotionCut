@@ -10,6 +10,7 @@ const reelsRoutes = require('./routes/reels');
 const avatarsRoutes = require('./routes/avatars');
 const uploadsRoutes = require('./routes/uploads');
 const influencerRoutes = require('./routes/influencer');
+const modelsRoutes = require('./routes/models');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -37,6 +38,7 @@ app.use('/api/reels', reelsRoutes);
 app.use('/api/avatars', avatarsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/influencer', influencerRoutes);
+app.use('/api/models', modelsRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/avatars', express.static('avatars'));
 
