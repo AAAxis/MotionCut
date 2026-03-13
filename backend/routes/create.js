@@ -2,7 +2,7 @@
  * /api/create — Unified AI Video Generation
  *
  * Two modes:
- *   1. Text-to-Video: User selects an AI model (Kling, Seedance) + types prompt → Replicate generates video
+ *   1. Text-to-Video: User selects an AI model + types prompt → Replicate generates video
  *   2. Image-to-Video: User uploads their photo + types prompt → Replicate animates their face
  *
  * POST /api/create/generate   → Start generation
@@ -14,32 +14,37 @@ const { v4: uuid } = require('uuid');
 
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
-// Default image-to-video model when user uploads photo
-const DEFAULT_I2V_MODEL = 'kwaivgi/kling-v2.1';
-
-// Known model configs — map model id to Replicate input format
+// Model configs — input format per model
 const MODEL_CONFIGS = {
-  'kwaivgi/kling-v2.1': {
-    type: 'both', // supports text-to-video and image-to-video
-    t2v_input: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '10', aspect_ratio: '9:16' }),
-    i2v_input: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration <= 5 ? '5' : '10', aspect_ratio: '9:16' }),
-  },
+  // Seedance Lite: text-to-video AND image-to-video, image is optional
   'bytedance/seedance-1-lite': {
-    type: 'both',
-    t2v_input: (prompt, duration) => ({ prompt, duration, aspect_ratio: '9:16' }),
-    i2v_input: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration, aspect_ratio: '9:16' }),
+    t2v: (prompt, duration) => ({ prompt, duration: duration || 5, aspect_ratio: '9:16' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration || 5, aspect_ratio: '9:16' }),
   },
+  // Seedance Pro: same as lite but higher quality
   'bytedance/seedance-1-pro': {
-    type: 'both',
-    t2v_input: (prompt, duration) => ({ prompt, duration, aspect_ratio: '9:16' }),
-    i2v_input: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration, aspect_ratio: '9:16' }),
+    t2v: (prompt, duration) => ({ prompt, duration: duration || 5, aspect_ratio: '9:16' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration || 5, aspect_ratio: '9:16' }),
   },
+  // MiniMax: text-to-video AND image-to-video
+  'minimax/video-01': {
+    t2v: (prompt) => ({ prompt, prompt_optimizer: true }),
+    i2v: (prompt, imageUrl) => ({ prompt, first_frame_image: imageUrl, prompt_optimizer: true }),
+  },
+  // Kling v2.1: IMAGE-TO-VIDEO ONLY (requires start_image)
+  'kwaivgi/kling-v2.1': {
+    t2v: null, // not supported
+    i2v: (prompt, imageUrl, duration) => ({ prompt, start_image: imageUrl, duration: duration <= 5 ? 5 : 10, mode: 'standard', aspect_ratio: '9:16' }),
+  },
+  // Kling v1.6: also i2v preferred
   'kwaivgi/kling-v1.6-standard': {
-    type: 'both',
-    t2v_input: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '10', aspect_ratio: '9:16' }),
-    i2v_input: (prompt, imageUrl, duration) => ({ prompt, start_image: imageUrl, duration: duration <= 5 ? '5' : '10', aspect_ratio: '9:16' }),
+    t2v: null,
+    i2v: (prompt, imageUrl, duration) => ({ prompt, start_image: imageUrl, duration: duration <= 5 ? 5 : 10, aspect_ratio: '9:16' }),
   },
 };
+
+const DEFAULT_T2V = 'bytedance/seedance-1-lite';
+const DEFAULT_I2V = 'kwaivgi/kling-v2.1';
 
 async function replicateAPI(method, path, body) {
   const res = await fetch(`https://api.replicate.com${path}`, {
@@ -56,49 +61,48 @@ async function replicateAPI(method, path, body) {
 // POST /api/create/generate
 router.post('/generate', async (req, res) => {
   try {
-    const { modelId, prompt, imageUrl, duration = 5, userId } = req.body;
+    let { modelId, prompt, imageUrl, duration = 5, userId } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'prompt is required' });
     }
 
     const hasImage = !!imageUrl;
-    const selectedModel = modelId || (hasImage ? DEFAULT_I2V_MODEL : 'kwaivgi/kling-v2.1');
-    const config = MODEL_CONFIGS[selectedModel];
-
+    
+    // Pick model and build input
+    let selectedModel = modelId;
     let input;
     let mode;
 
     if (hasImage) {
-      // Image-to-video: animate user's uploaded photo
       mode = 'image-to-video';
-      if (config?.i2v_input) {
-        input = config.i2v_input(prompt, imageUrl, duration);
-      } else {
-        // Generic fallback for unknown models
-        input = { prompt, image: imageUrl, duration, aspect_ratio: '9:16' };
+      // If selected model doesn't support i2v, fall back
+      if (!selectedModel || !MODEL_CONFIGS[selectedModel]?.i2v) {
+        selectedModel = DEFAULT_I2V;
       }
+      const config = MODEL_CONFIGS[selectedModel];
+      input = config.i2v(prompt, imageUrl, duration);
     } else {
-      // Text-to-video: generate from scratch
       mode = 'text-to-video';
-      if (config?.t2v_input) {
-        input = config.t2v_input(prompt, duration);
-      } else {
-        input = { prompt, duration, aspect_ratio: '9:16' };
+      // If selected model doesn't support t2v, fall back
+      if (!selectedModel || !MODEL_CONFIGS[selectedModel]?.t2v) {
+        selectedModel = DEFAULT_T2V;
       }
+      const config = MODEL_CONFIGS[selectedModel];
+      input = config.t2v(prompt, duration);
     }
 
-    console.log(`[Create] ${mode}: model=${selectedModel}, prompt="${prompt.substring(0, 50)}...", hasImage=${hasImage}`);
+    console.log(`[Create] ${mode}: model=${selectedModel}, prompt="${prompt.substring(0, 60)}", hasImage=${hasImage}`);
 
-    // Create prediction using model name (Replicate resolves to latest version)
-    const prediction = await replicateAPI('POST', '/v1/models/' + selectedModel + '/predictions', {
-      input,
-    });
+    // Create prediction
+    const prediction = await replicateAPI('POST', `/v1/models/${selectedModel}/predictions`, { input });
 
     if (prediction.error || prediction.detail) {
       console.error('[Create] Replicate error:', prediction.error || prediction.detail);
       return res.status(500).json({ error: prediction.error || prediction.detail || 'Replicate API error' });
     }
+
+    console.log(`[Create] Prediction started: ${prediction.id}, status=${prediction.status}`);
 
     // Save to DB
     const id = uuid();
@@ -137,7 +141,6 @@ router.get('/status/:id', async (req, res) => {
       if (prediction.status !== gen.status) {
         let outputUrl = gen.output_url;
         if (prediction.status === 'succeeded' && prediction.output) {
-          // Output can be string or array
           outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
         }
         const errorMsg = prediction.status === 'failed' ? (prediction.error || 'Generation failed') : null;
