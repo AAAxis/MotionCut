@@ -65,6 +65,35 @@ struct UploadedVideoResponse: Codable {
     let status: String?
 }
 
+// MARK: - AI Create (Replicate)
+
+struct AICreateRequest: Encodable {
+    let modelId: String
+    let prompt: String
+    let imageUrl: String?
+    let duration: Int
+    let userId: String?
+}
+
+struct AICreateResponse: Decodable {
+    let success: Bool?
+    let id: String?
+    let mode: String?
+    let model: String?
+    let status: String?
+    let replicateId: String?
+    let error: String?
+}
+
+struct AICreateStatus: Decodable {
+    let id: String?
+    let status: String?
+    let mode: String?
+    let model: String?
+    let outputUrl: String?
+    let error: String?
+}
+
 struct PreviewRequest: Encodable {
     let url: String
 }
@@ -154,6 +183,38 @@ actor GenerationService {
         return try JSONDecoder().decode(ReelGenerateResponse.self, from: data)
     }
 
+    // MARK: - AI Create via Replicate
+    
+    func startAICreate(modelId: String, prompt: String, imageUrl: String?, duration: Int, userId: String?) async throws -> AICreateResponse {
+        let baseURL = api.baseURL.replacingOccurrences(of: "http://", with: "https://")
+        guard let url = URL(string: "\(baseURL)/api/create/generate") else {
+            throw APIError.invalidURL
+        }
+        
+        let request = AICreateRequest(modelId: modelId, prompt: prompt, imageUrl: imageUrl, duration: duration, userId: userId)
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 30
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+        
+        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
+            throw APIError.httpError((response as? HTTPURLResponse)?.statusCode ?? 500)
+        }
+        return try JSONDecoder().decode(AICreateResponse.self, from: data)
+    }
+    
+    func pollAICreate(id: String) async throws -> AICreateStatus {
+        let baseURL = api.baseURL.replacingOccurrences(of: "http://", with: "https://")
+        guard let url = URL(string: "\(baseURL)/api/create/status/\(id)") else {
+            throw APIError.invalidURL
+        }
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return try JSONDecoder().decode(AICreateStatus.self, from: data)
+    }
+    
     func uploadReferenceVideo(fileURL: URL, userId: String) async throws -> UploadedVideoResponse {
         let baseURL = api.baseURL
         guard let url = URL(string: "\(baseURL)/api/uploads/video") else {

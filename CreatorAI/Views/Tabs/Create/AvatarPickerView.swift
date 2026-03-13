@@ -35,6 +35,7 @@ struct AvatarPickerView: View {
                 ForEach(PRESET_AI_MODELS) { model in
                     Button {
                         viewModel.reelInfluencerId = model.id
+                        viewModel.reelAvatarImageURL = nil  // AI model = text-to-video, no face image
                     } label: {
                         VStack(spacing: 6) {
                             AsyncImage(url: URL(string: model.imageURL)) { phase in
@@ -76,6 +77,7 @@ struct AvatarPickerView: View {
                 ForEach(uploadedAvatars) { avatar in
                     Button {
                         viewModel.reelInfluencerId = avatar.id
+                        viewModel.reelAvatarImageURL = avatar.fullURL
                     } label: {
                         VStack(spacing: 6) {
                             AsyncImage(url: URL(string: avatar.fullURL)) { phase in
@@ -212,6 +214,7 @@ struct AvatarPickerView: View {
                 uploadedAvatars.removeAll { $0.id == avatar.id }
                 uploadedAvatars.insert(avatar, at: 0)
                 viewModel.reelInfluencerId = avatar.id
+                viewModel.reelAvatarImageURL = avatar.fullURL
             }
         } catch {
             print("Avatar upload failed: \(error)")

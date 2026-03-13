@@ -118,6 +118,7 @@ class CreateViewModel: ObservableObject {
     @Published var reelDuration = 10
     @Published var reelInfluencerId = "avatar_1"
     @Published var reelReferenceVideoURL: URL?
+    @Published var reelAvatarImageURL: String?  // HTTPS URL of uploaded avatar for i2v
 
     // Ad state
     @Published var adURL = ""
@@ -172,6 +173,7 @@ class CreateViewModel: ObservableObject {
         let language = reelLang
         let duration = reelDuration
         let influencerId = reelInfluencerId
+        let avatarImageURL = reelAvatarImageURL
         let referenceVideoURL = reelReferenceVideoURL
         let userId = appState.userId ?? "demo-user"
 
@@ -198,7 +200,43 @@ class CreateViewModel: ObservableObject {
                         generationID: generation.id,
                         influenceID: influence.id
                     )
+                } else if influencerId.contains("/") {
+                    // AI model selected (e.g. "bytedance/seedance-1-lite") → Replicate
+                    let imageUrl: String? = avatarImageURL
+                    let createResponse = try await GenerationService.shared.startAICreate(
+                        modelId: influencerId,
+                        prompt: topic,
+                        imageUrl: imageUrl,
+                        duration: duration,
+                        userId: userId
+                    )
+                    
+                    guard let createId = createResponse.id else {
+                        await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
+                        return
+                    }
+                    
+                    // Poll until done (max 5 min)
+                    let deadline = Date().addingTimeInterval(300)
+                    while Date() < deadline {
+                        try await Task.sleep(nanoseconds: 5_000_000_000) // 5s
+                        let status = try await GenerationService.shared.pollAICreate(id: createId)
+                        if status.status == "succeeded", let outputUrl = status.outputUrl {
+                            await GenerationService.shared.updateGeneration(
+                                id: generation.id,
+                                status: .completed,
+                                remoteVideoUrl: outputUrl
+                            )
+                            return
+                        } else if status.status == "failed" || status.status == "canceled" {
+                            await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
+                            return
+                        }
+                    }
+                    // Timeout
+                    await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
                 } else {
+                    // Custom uploaded avatar without reference video → stock footage reel
                     let response = try await GenerationService.shared.generateReel(
                         topic: topic,
                         language: language,
@@ -288,6 +326,7 @@ private extension CreateViewModel {
     func resetReelForm() {
         reelTopic = ""
         reelReferenceVideoURL = nil
+        reelAvatarImageURL = nil
     }
 }
 
