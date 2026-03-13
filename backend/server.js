@@ -13,6 +13,7 @@ const influencerRoutes = require('./routes/influencer');
 const modelsRoutes = require('./routes/models');
 const createRoutes = require('./routes/create');
 const adsRoutes = require('./routes/ads');
+const webhooksRoutes = require('./routes/webhooks');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -22,6 +23,10 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 // Middleware
 app.use(cors());
+
+// Mount webhooks before generic express.json() so it gets the raw buffer
+app.use('/api/webhooks', webhooksRoutes);
+
 app.use(express.json({ limit: '50mb' }));
 app.use('/output', express.static('output'));
 
