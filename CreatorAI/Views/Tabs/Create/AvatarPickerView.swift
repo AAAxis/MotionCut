@@ -5,6 +5,7 @@ struct UploadedAvatar: Identifiable {
     let id: String
     let name: String
     let url: String       // server relative path e.g. /uploads/avatar_xxx.jpg
+    var image: UIImage?
     var fullURL: String {  // full HTTPS URL for AsyncImage
         "\(APIService.shared.syncBaseURL)\(url)"
     }
@@ -199,7 +200,7 @@ struct AvatarPickerView: View {
         
         do {
             let result = try await uploadAvatarImage(jpegData: jpegData, filename: "avatar_\(UUID().uuidString).jpg")
-            let avatar = UploadedAvatar(id: result.id, name: result.name, url: result.url)
+            let avatar = UploadedAvatar(id: result.id, name: result.name, url: result.url, image: resized)
             await MainActor.run {
                 uploadedAvatars.removeAll { $0.id == avatar.id }
                 uploadedAvatars.insert(avatar, at: 0)
