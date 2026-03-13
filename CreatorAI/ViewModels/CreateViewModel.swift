@@ -181,26 +181,7 @@ class CreateViewModel: ObservableObject {
 
         Task.detached(priority: .background) {
             do {
-                if let localReferenceVideoURL = referenceVideoURL {
-                    let uploadedVideo = try await GenerationService.shared.uploadReferenceVideo(
-                        fileURL: localReferenceVideoURL,
-                        userId: userId
-                    )
-                    let uploadedVideoURL = makeAbsoluteReelURL(uploadedVideo.url)
-
-                    let influence = try await GenerationService.shared.startInfluenceReel(
-                        topic: topic,
-                        duration: duration,
-                        influencerId: influencerId,
-                        referenceVideoUrl: uploadedVideoURL,
-                        userId: userId
-                    )
-
-                    try await pollInfluenceResult(
-                        generationID: generation.id,
-                        influenceID: influence.id
-                    )
-                } else if influencerId.contains("/") {
+                if influencerId.contains("/") {
                     // AI model selected (e.g. "bytedance/seedance-1-lite") → Replicate
                     let imageUrl: String? = avatarImageURL
                     let createResponse = try await GenerationService.shared.startAICreate(
@@ -235,8 +216,28 @@ class CreateViewModel: ObservableObject {
                     }
                     // Timeout
                     await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
+                } else if let localReferenceVideoURL = referenceVideoURL {
+                    // Custom avatar + reference video → LivePortrait
+                    let uploadedVideo = try await GenerationService.shared.uploadReferenceVideo(
+                        fileURL: localReferenceVideoURL,
+                        userId: userId
+                    )
+                    let uploadedVideoURL = makeAbsoluteReelURL(uploadedVideo.url)
+
+                    let influence = try await GenerationService.shared.startInfluenceReel(
+                        topic: topic,
+                        duration: duration,
+                        influencerId: influencerId,
+                        referenceVideoUrl: uploadedVideoURL,
+                        userId: userId
+                    )
+
+                    try await pollInfluenceResult(
+                        generationID: generation.id,
+                        influenceID: influence.id
+                    )
                 } else {
-                    // Custom uploaded avatar without reference video → stock footage reel
+                    // Custom avatar, no reference video → stock footage reel
                     let response = try await GenerationService.shared.generateReel(
                         topic: topic,
                         language: language,
