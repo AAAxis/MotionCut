@@ -12,6 +12,7 @@ const uploadsRoutes = require('./routes/uploads');
 const influencerRoutes = require('./routes/influencer');
 const modelsRoutes = require('./routes/models');
 const createRoutes = require('./routes/create');
+const adsRoutes = require('./routes/ads');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -41,6 +42,7 @@ app.use('/api/uploads', uploadsRoutes);
 app.use('/api/influencer', influencerRoutes);
 app.use('/api/models', modelsRoutes);
 app.use('/api/create', createRoutes);
+app.use('/api/ads', adsRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/avatars', express.static('avatars'));
 
@@ -100,6 +102,23 @@ async function init() {
       fps INT DEFAULT 30,
       status TEXT DEFAULT 'ready',
       created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS ad_generations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      product_url TEXT,
+      notes TEXT,
+      product_info TEXT,
+      script TEXT,
+      audio_url TEXT,
+      video_url TEXT,
+      output_url TEXT,
+      status TEXT DEFAULT 'processing',
+      step TEXT DEFAULT 'scraping',
+      error TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
     );
 
     CREATE TABLE IF NOT EXISTS ai_generations (

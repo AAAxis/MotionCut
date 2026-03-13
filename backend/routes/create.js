@@ -12,6 +12,7 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuid } = require('uuid');
 
+const { calculateCost } = require('../config/credits');
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
 // Model configs — input format per model
@@ -65,6 +66,21 @@ router.post('/generate', async (req, res) => {
 
     if (!prompt) {
       return res.status(400).json({ error: 'prompt is required' });
+    }
+
+    // Credit check
+    if (userId) {
+      const userCheck = await req.db.query('SELECT credits, is_subscribed FROM users WHERE external_id = $1', [userId]);
+      const user = userCheck.rows[0];
+      if (user && !user.is_subscribed) {
+        const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+        if (user.credits < cost) {
+          return res.status(402).json({ error: 'Insufficient credits', credits: user.credits, cost });
+        }
+        // Deduct credits
+        await req.db.query('UPDATE users SET credits = credits - $1 WHERE external_id = $2', [cost, userId]);
+        console.log(`[Create] Deducted ${cost} credits from ${userId}`);
+      }
     }
 
     const hasImage = !!imageUrl;
