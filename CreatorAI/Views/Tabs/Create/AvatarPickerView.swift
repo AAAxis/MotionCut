@@ -4,8 +4,10 @@ import PhotosUI
 struct UploadedAvatar: Identifiable {
     let id: String
     let name: String
-    let url: String
-    var image: UIImage?
+    let url: String       // server relative path e.g. /uploads/avatar_xxx.jpg
+    var fullURL: String {  // full HTTPS URL for AsyncImage
+        "\(APIService.shared.syncBaseURL)\(url)"
+    }
 }
 
 struct AvatarPickerView: View {
@@ -67,27 +69,22 @@ struct AvatarPickerView: View {
                         viewModel.reelInfluencerId = avatar.id
                     } label: {
                         VStack(spacing: 6) {
-                            if let img = avatar.image {
-                                Image(uiImage: img)
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 48, height: 48)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                            } else {
-                                AsyncImage(url: URL(string: "\(APIService.shared.syncBaseURL)\(avatar.url)")) { phase in
-                                    switch phase {
-                                    case .success(let image):
-                                        image
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 48, height: 48)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    default:
-                                        Image(systemName: "person.crop.circle.fill")
-                                            .font(.system(size: 24))
-                                            .foregroundColor(theme.textSecondary)
-                                            .frame(width: 48, height: 48)
-                                    }
+                            AsyncImage(url: URL(string: avatar.fullURL)) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                case .failure:
+                                    Image(systemName: "person.crop.circle.fill")
+                                        .font(.system(size: 24))
+                                        .foregroundColor(theme.textSecondary)
+                                        .frame(width: 48, height: 48)
+                                default:
+                                    ProgressView()
+                                        .frame(width: 48, height: 48)
                                 }
                             }
                             Text(avatar.name)
@@ -175,7 +172,7 @@ struct AvatarPickerView: View {
         
         do {
             let result = try await uploadAvatarImage(jpegData: jpegData, filename: "avatar_\(UUID().uuidString).jpg")
-            let avatar = UploadedAvatar(id: result.id, name: result.name, url: result.url, image: resized)
+            let avatar = UploadedAvatar(id: result.id, name: result.name, url: result.url)
             await MainActor.run {
                 uploadedAvatars.insert(avatar, at: 0)
                 viewModel.reelInfluencerId = avatar.id
@@ -187,7 +184,8 @@ struct AvatarPickerView: View {
     
     private func uploadAvatarImage(jpegData: Data, filename: String) async throws -> (id: String, name: String, url: String) {
         let baseURL = await APIService.shared.baseURL
-        let url = URL(string: "\(baseURL)/api/uploads/image")!
+        let httpsBase = baseURL.replacingOccurrences(of: "http://", with: "https://")
+        let url = URL(string: "\(httpsBase)/api/uploads/image")!
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -228,7 +226,8 @@ struct AvatarPickerView: View {
     private func loadUploadedAvatars() async {
         let userId = appState.userId ?? "demo-user"
         let baseURL = await APIService.shared.baseURL
-        guard let url = URL(string: "\(baseURL)/api/uploads/avatars/\(userId)") else { return }
+        let httpsBase = baseURL.replacingOccurrences(of: "http://", with: "https://")
+        guard let url = URL(string: "\(httpsBase)/api/uploads/avatars/\(userId)") else { return }
         
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
