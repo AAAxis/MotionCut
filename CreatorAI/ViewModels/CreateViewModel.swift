@@ -116,7 +116,7 @@ class CreateViewModel: ObservableObject {
     @Published var reelTopic = ""
     @Published var reelLang = "en"
     @Published var reelDuration = 10
-    @Published var reelInfluencerId = "avatar_1"
+    @Published var reelInfluencerId = "bytedance/seedance-1-lite"
     @Published var reelReferenceVideoURL: URL?
     @Published var reelAvatarImageURL: String?  // HTTPS URL of uploaded avatar for i2v
 
