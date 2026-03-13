@@ -13,6 +13,32 @@ const COLLECTIONS = [
   'ai-face-generator',
 ];
 
+function isImageUrl(url) {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || 
+         lower.endsWith('.webp') || lower.endsWith('.gif');
+}
+
+function pickPreviewImage(m) {
+  // Prefer cover_image if it's an actual image (not video)
+  if (isImageUrl(m.cover_image_url)) return m.cover_image_url;
+  if (isImageUrl(m.featured_image_url)) return m.featured_image_url;
+  
+  // Try default_example output
+  const output = m.default_example?.output;
+  if (output) {
+    if (typeof output === 'string' && isImageUrl(output)) return output;
+    if (Array.isArray(output)) {
+      const img = output.find(u => isImageUrl(u));
+      if (img) return img;
+    }
+  }
+
+  // Fallback: return cover even if it's video (app can show first frame or thumbnail)
+  return m.cover_image_url || null;
+}
+
 async function fetchCollection(slug) {
   const res = await fetch(`${BASE}/collections/${slug}`, {
     headers: { 'Authorization': `Bearer ${REPLICATE_TOKEN}` },
@@ -24,7 +50,8 @@ async function fetchCollection(slug) {
     name: m.name,
     owner: m.owner,
     description: m.description || '',
-    cover_image: m.cover_image_url || m.featured_image_url || null,
+    cover_image: pickPreviewImage(m),
+    is_video_preview: !isImageUrl(pickPreviewImage(m)) && pickPreviewImage(m) != null,
     collection: slug,
     url: m.url || `https://replicate.com/${m.owner}/${m.name}`,
     run_count: m.run_count || 0,
@@ -34,11 +61,17 @@ async function fetchCollection(slug) {
 // GET /api/models — list all AI models from Replicate collections
 router.get('/', async (req, res) => {
   try {
-    const collection = req.query.collection; // optional filter
+    const collection = req.query.collection;
+    const imagesOnly = req.query.images_only === 'true';
     const slugs = collection ? [collection] : COLLECTIONS;
     
     const results = await Promise.all(slugs.map(fetchCollection));
-    const models = results.flat();
+    let models = results.flat();
+    
+    // Filter to only models with image previews if requested
+    if (imagesOnly) {
+      models = models.filter(m => m.cover_image && !m.is_video_preview);
+    }
     
     // Sort by popularity
     models.sort((a, b) => (b.run_count || 0) - (a.run_count || 0));
@@ -68,7 +101,7 @@ router.get('/collections', async (req, res) => {
   }
 });
 
-// GET /api/models/:owner/:name — get single model details
+// GET /api/models/:owner/:name — get single model details with example outputs
 router.get('/:owner/:name', async (req, res) => {
   try {
     const { owner, name } = req.params;
@@ -78,6 +111,15 @@ router.get('/:owner/:name', async (req, res) => {
     if (!r.ok) return res.status(404).json({ error: 'Model not found' });
     
     const m = await r.json();
+    
+    // Collect all preview images from example output
+    const exampleOutput = m.default_example?.output;
+    let previews = [];
+    if (exampleOutput) {
+      if (typeof exampleOutput === 'string') previews.push(exampleOutput);
+      if (Array.isArray(exampleOutput)) previews.push(...exampleOutput);
+    }
+    if (m.cover_image_url) previews.unshift(m.cover_image_url);
     
     // Get latest version's schema for input params
     const schema = m.latest_version?.openapi_schema?.components?.schemas?.Input?.properties || {};
@@ -94,7 +136,8 @@ router.get('/:owner/:name', async (req, res) => {
       name: m.name,
       owner: m.owner,
       description: m.description || '',
-      cover_image: m.cover_image_url || null,
+      cover_image: pickPreviewImage(m),
+      previews,
       url: m.url,
       run_count: m.run_count || 0,
       latest_version: m.latest_version?.id || null,
