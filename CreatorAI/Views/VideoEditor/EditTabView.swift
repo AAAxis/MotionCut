@@ -82,28 +82,31 @@ struct EditTabView: View {
                         .disabled(viewModel.activeClipIndex >= viewModel.clips.count - 1)
                     }
                 }
-                    // Clip Actions
-                    Divider().background(theme.border)
 
-                    HStack(spacing: 16) {
-                        // Split at playhead
-                        EditActionButton(icon: "scissors", label: "Split") {
-                            viewModel.splitClipAtPlayhead()
-                        }
+                // Clip Actions
+                Divider().background(theme.border)
 
-                        // Duplicate clip
-                        EditActionButton(icon: "doc.on.doc", label: "Duplicate") {
-                            viewModel.duplicateClip(at: viewModel.activeClipIndex)
-                        }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Clip Actions")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(theme.textSecondary)
 
-                        // Delete clip
-                        if viewModel.clips.count > 1 {
-                            EditActionButton(icon: "trash", label: "Delete", isDestructive: true) {
-                                viewModel.removeClip(at: viewModel.activeClipIndex)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            EditActionButton(icon: "scissors", label: "Cut") {
+                                viewModel.splitClipAtPlayhead()
+                            }
+
+                            EditActionButton(icon: "doc.on.doc", label: "Duplicate") {
+                                viewModel.duplicateClip(at: viewModel.activeClipIndex)
+                            }
+
+                            if viewModel.clips.count > 1 {
+                                EditActionButton(icon: "trash", label: "Delete", isDestructive: true) {
+                                    viewModel.removeClip(at: viewModel.activeClipIndex)
+                                }
                             }
                         }
-
-                        Spacer()
                     }
                 }
             } else {
@@ -131,9 +134,10 @@ struct EditActionButton: View {
                     .font(.system(size: 18))
                 Text(label)
                     .font(.system(size: 11, weight: .medium))
+                    .lineLimit(1)
             }
             .foregroundColor(isDestructive ? .red : theme.text)
-            .frame(width: 60, height: 50)
+            .frame(width: 68, height: 50)
             .background(
                 RoundedRectangle(cornerRadius: 10)
                     .fill(theme.surfaceElevated)

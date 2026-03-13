@@ -20,6 +20,10 @@ struct VideoEditorView: View {
                         VideoPreviewView(viewModel: viewModel)
 
                         ClipsTimelineView(viewModel: viewModel)
+
+                        EditorTabBar(activeTab: $viewModel.activeTab)
+
+                        editorPanel
                     }
                     .padding(.bottom, 24)
                 }
@@ -91,6 +95,18 @@ struct VideoEditorView: View {
             viewModel.ensureMusicPlaying()
             try? await Task.sleep(nanoseconds: 800_000_000)
             viewModel.ensureMusicPlaying()
+        }
+    }
+
+    @ViewBuilder
+    private var editorPanel: some View {
+        switch viewModel.activeTab {
+        case "compress":
+            CompressTabView(viewModel: viewModel)
+        case "music":
+            MusicTabView(viewModel: viewModel)
+        default:
+            EditTabView(viewModel: viewModel)
         }
     }
 }
