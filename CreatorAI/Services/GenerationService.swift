@@ -4,6 +4,8 @@ struct ReelRequest: Encodable {
     let topic: String
     let language: String
     let duration: Int
+    let influencerId: String?
+    let referenceVideoUrl: String?
 }
 
 struct ReelProgress {
@@ -80,11 +82,19 @@ actor GenerationService {
         topic: String,
         language: String,
         duration: Int,
+        influencerId: String?,
+        referenceVideoUrl: String?,
         onProgress: @escaping @Sendable (ReelProgress) -> Void,
         onDone: @escaping @Sendable (ReelResult) -> Void,
         onError: @escaping @Sendable (String) -> Void
     ) async {
-        let request = ReelRequest(topic: topic, language: language, duration: duration)
+        let request = ReelRequest(
+            topic: topic,
+            language: language,
+            duration: duration,
+            influencerId: influencerId,
+            referenceVideoUrl: referenceVideoUrl
+        )
 
         do {
             try await api.streamSSE(path: "/api/reels/plan", body: request) { event in

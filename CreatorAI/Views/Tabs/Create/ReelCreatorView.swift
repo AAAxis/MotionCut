@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct ReelCreatorView: View {
     @ObservedObject var viewModel: CreateViewModel
@@ -41,36 +42,63 @@ struct ReelCreatorView: View {
                 }
                 .padding(.bottom, 20)
 
-            // Language
-            SectionLabel("LANGUAGE")
+            // Influencer / Avatar
+            SectionLabel("INFLUENCER / AVATAR")
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(LANGUAGES) { lang in
+                HStack(spacing: 12) {
+                    ForEach(PRESET_AVATARS) { avatar in
                         Button {
-                            viewModel.reelLang = lang.id
+                            viewModel.reelInfluencerId = avatar.id
                         } label: {
-                            HStack(spacing: 6) {
-                                Text(flagEmoji(lang.flag))
-                                    .font(.system(size: 16))
-                                Text(lang.label)
-                                    .font(.system(size: 14, weight: .semibold))
+                            VStack(spacing: 6) {
+                                Image(systemName: avatar.iconName)
+                                    .font(.system(size: 32))
+                                    .foregroundColor(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.textSecondary)
+                                Text(avatar.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.text)
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
+                            .frame(width: 72, height: 72)
                             .background(
-                                RoundedRectangle(cornerRadius: 12)
-                                    .fill(viewModel.reelLang == lang.id ? theme.primary.opacity(0.08) : theme.surfaceElevated)
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(viewModel.reelInfluencerId == avatar.id ? theme.primary.opacity(0.12) : theme.surfaceElevated)
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(viewModel.reelLang == lang.id ? theme.primary : theme.border, lineWidth: 1.5)
+                                        RoundedRectangle(cornerRadius: 14)
+                                            .stroke(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.border, lineWidth: viewModel.reelInfluencerId == avatar.id ? 2 : 1)
                                     )
                             )
-                            .foregroundColor(viewModel.reelLang == lang.id ? theme.primary : theme.text)
                         }
+                    }
+                    // Create your own
+                    Button {
+                        viewModel.reelInfluencerId = "custom"
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(viewModel.reelInfluencerId == "custom" ? theme.primary : theme.textTertiary)
+                            Text("Create own")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(viewModel.reelInfluencerId == "custom" ? theme.primary : theme.textSecondary)
+                        }
+                        .frame(width: 72, height: 72)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(viewModel.reelInfluencerId == "custom" ? theme.primary.opacity(0.12) : theme.surfaceElevated)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .stroke(viewModel.reelInfluencerId == "custom" ? theme.primary : theme.border, lineWidth: viewModel.reelInfluencerId == "custom" ? 2 : 1)
+                                )
+                        )
                     }
                 }
             }
             .padding(.bottom, 20)
+
+            // Reference video (for movement)
+            SectionLabel("REFERENCE VIDEO (copy movement)")
+            ReferenceVideoPickerView(referenceVideoURL: $viewModel.reelReferenceVideoURL)
+                .padding(.bottom, 20)
 
             // Duration
             SectionLabel("DURATION")
@@ -196,10 +224,120 @@ struct ReelCreatorView: View {
     private func currentReelStep(_ stepString: String) -> ReelStep {
         ReelStep(rawValue: stepString) ?? .scenario
     }
+}
 
-    private func flagEmoji(_ code: String) -> String {
-        let base: UInt32 = 127397
-        return code.unicodeScalars.compactMap { UnicodeScalar(base + $0.value) }.map { String($0) }.joined()
+// MARK: - Reference Video Picker (for movement copy)
+
+struct ReferenceVideoPickerView: View {
+    @Binding var referenceVideoURL: URL?
+    @Environment(\.theme) var theme
+    @State private var selectedItem: PhotosPickerItem?
+    @State private var thumbnailImage: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let url = referenceVideoURL {
+                HStack(spacing: 12) {
+                    if let img = thumbnailImage {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 80, height: 80)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(theme.surfaceElevated)
+                            .frame(width: 80, height: 80)
+                            .overlay(
+                                Image(systemName: "video.fill")
+                                    .font(.system(size: 28))
+                                    .foregroundColor(theme.textTertiary)
+                            )
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reference video selected")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(theme.text)
+                        Text(url.lastPathComponent)
+                            .font(.system(size: 12))
+                            .foregroundColor(theme.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer()
+                    Button {
+                        referenceVideoURL = nil
+                        selectedItem = nil
+                        thumbnailImage = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(theme.textTertiary)
+                    }
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(theme.surfaceElevated)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(theme.border, lineWidth: 1)
+                        )
+                )
+            } else {
+                PhotosPicker(
+                    selection: $selectedItem,
+                    matching: .videos,
+                    photoLibrary: .shared()
+                ) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "video.badge.plus")
+                            .font(.system(size: 22))
+                        Text("Upload video to copy movement")
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                    .foregroundColor(theme.primary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(theme.primary.opacity(0.12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .stroke(theme.primary.opacity(0.5), lineWidth: 1.5)
+                            )
+                    )
+                }
+                .onChange(of: selectedItem) { newItem in
+                    Task {
+                        guard let newItem = newItem else { return }
+                        if let data = try? await newItem.loadTransferable(type: Data.self), !data.isEmpty {
+                            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".mp4")
+                            try? data.write(to: tempURL)
+                            await MainActor.run {
+                                referenceVideoURL = tempURL
+                                loadThumbnail(for: tempURL)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .onChange(of: referenceVideoURL) { url in
+            if let url = url, thumbnailImage == nil {
+                loadThumbnail(for: url)
+            }
+        }
+    }
+
+    private func loadThumbnail(for url: URL) {
+        Task {
+            if let image = await ThumbnailService.shared.generateThumbnail(for: url) {
+                await MainActor.run {
+                    thumbnailImage = image
+                }
+            }
+        }
     }
 }
 

@@ -6,7 +6,7 @@ enum CreateMode: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .reel: return "Quick Reel"
+        case .reel: return "AI Influencer"
         case .ad: return "Video Ad"
         }
     }
@@ -37,6 +37,20 @@ struct LanguageOption: Identifiable {
     let label: String
     let flag: String
 }
+
+struct InfluencerAvatar: Identifiable {
+    let id: String
+    let name: String
+    let iconName: String
+}
+
+let PRESET_AVATARS: [InfluencerAvatar] = [
+    InfluencerAvatar(id: "avatar_1", name: "Alex", iconName: "person.crop.circle.fill"),
+    InfluencerAvatar(id: "avatar_2", name: "Jordan", iconName: "person.crop.circle.fill"),
+    InfluencerAvatar(id: "avatar_3", name: "Sam", iconName: "person.crop.circle.fill"),
+    InfluencerAvatar(id: "avatar_4", name: "Riley", iconName: "person.crop.circle.fill"),
+    InfluencerAvatar(id: "avatar_5", name: "Casey", iconName: "person.crop.circle.fill"),
+]
 
 let AD_STYLES: [StyleOption] = [
     StyleOption(id: "modern", label: "Modern", icon: "sparkles"),
@@ -103,6 +117,8 @@ class CreateViewModel: ObservableObject {
     @Published var reelTopic = ""
     @Published var reelLang = "en"
     @Published var reelDuration = 10
+    @Published var reelInfluencerId = "avatar_1"
+    @Published var reelReferenceVideoURL: URL?
 
     // Ad state
     @Published var adURL = ""
@@ -150,6 +166,8 @@ class CreateViewModel: ObservableObject {
             topic: reelTopic.trimmingCharacters(in: .whitespaces),
             language: reelLang,
             duration: reelDuration,
+            influencerId: reelInfluencerId,
+            referenceVideoUrl: reelReferenceVideoURL?.absoluteString,
             onProgress: { [weak self] progress in
                 Task { @MainActor in
                     self?.genProgress = (step: progress.step, message: progress.message)
