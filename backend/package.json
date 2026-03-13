@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test:reels-api": "node scripts/test-reels-api.js"
   },
   "dependencies": {
     "cheerio": "^1.0.0-rc.12",

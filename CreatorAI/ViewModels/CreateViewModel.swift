@@ -130,7 +130,6 @@ class CreateViewModel: ObservableObject {
 
     // Common
     @Published var isLoading = false
-    @Published var genProgress: (step: String, message: String)?
     @Published var errorMessage: String?
     @Published var showPaywall = false
 
@@ -148,83 +147,49 @@ class CreateViewModel: ObservableObject {
 
     // MARK: - Reel Generation
 
-    func generateReel(appState: AppState) async -> VideoEditorParams? {
+    func generateReel(appState: AppState) async -> Bool {
         guard !reelTopic.trimmingCharacters(in: .whitespaces).isEmpty else {
             errorMessage = "Enter a topic for your reel"
-            return nil
+            return false
         }
-        guard checkCredits(appState) else { return nil }
+        guard checkCredits(appState) else { return false }
 
         isLoading = true
-        genProgress = (step: "starting", message: "Starting...")
         errorMessage = nil
+        defer { isLoading = false }
 
-        var result: VideoEditorParams?
+        do {
+            let response = try await GenerationService.shared.generateReel(
+                topic: reelTopic.trimmingCharacters(in: .whitespaces),
+                language: reelLang,
+                duration: reelDuration,
+                influencerId: reelInfluencerId,
+                referenceVideoUrl: reelReferenceVideoURL?.absoluteString
+            )
 
-        await GenerationService.shared.generateReel(
-            topic: reelTopic.trimmingCharacters(in: .whitespaces),
-            language: reelLang,
-            duration: reelDuration,
-            influencerId: reelInfluencerId,
-            referenceVideoUrl: reelReferenceVideoURL?.absoluteString,
-            onProgress: { [weak self] progress in
-                Task { @MainActor in
-                    self?.genProgress = (step: progress.step, message: progress.message)
-                }
-            },
-            onDone: { [weak self] reelResult in
-                Task { @MainActor in
-                    self?.genProgress = (step: "done", message: "Done!")
-                    appState.useCredits()
-
-                    if let takes = reelResult.takes, !takes.isEmpty {
-                        let clipData = takes.enumerated().map { (i, t) -> [String: Any] in
-                            var clip: [String: Any] = [
-                                "id": Int(Date().timeIntervalSince1970 * 1000) + i,
-                                "uri": t.pexelsUrl ?? "",
-                                "name": t.text ?? "Take \(i + 1)",
-                                "mimeType": "video/mp4",
-                                "trimStart": 0,
-                                "trimEnd": 100,
-                                "text": t.text ?? "",
-                            ]
-                            if let bd = t.beatDuration { clip["beatDuration"] = bd }
-                            if let sd = t.sourceDuration { clip["sourceDuration"] = sd }
-                            return clip
-                        }
-
-                        if let jsonData = try? JSONSerialization.data(withJSONObject: clipData),
-                           let jsonString = String(data: jsonData, encoding: .utf8) {
-
-                            let apiBase = await APIService.shared.baseURL
-                            var musicURL: String?
-                            if let mu = reelResult.musicUrl {
-                                musicURL = "\(apiBase)\(mu)"
-                            }
-
-                            result = VideoEditorParams(
-                                takesJson: jsonString,
-                                musicUrl: musicURL,
-                                userId: "demo-user"
-                            )
-                        }
-                    }
-
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    self?.isLoading = false
-                    self?.genProgress = nil
-                }
-            },
-            onError: { [weak self] error in
-                Task { @MainActor in
-                    self?.errorMessage = error
-                    self?.isLoading = false
-                    self?.genProgress = nil
-                }
+            guard let downloadUrl = response.downloadUrl, !downloadUrl.isEmpty else {
+                errorMessage = "The API did not return a video URL."
+                return false
             }
-        )
 
-        return result
+            let absoluteVideoURL = makeAbsoluteURL(downloadUrl)
+            let generation = Generation(
+                videoName: response.hook ?? reelTopic.trimmingCharacters(in: .whitespaces),
+                videoUri: nil,
+                resultVideoUrl: absoluteVideoURL,
+                status: .completed,
+                createdAt: Date(),
+                userId: appState.userId ?? "demo-user"
+            )
+
+            await GenerationService.shared.saveGeneration(generation)
+            appState.useCredits()
+            resetReelForm()
+            return true
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
     }
 
     // MARK: - Ad Preview
@@ -281,5 +246,20 @@ class CreateViewModel: ObservableObject {
     func resetAdPreview() {
         adPreview = nil
         adStep = .input
+    }
+}
+
+private extension CreateViewModel {
+    func makeAbsoluteURL(_ path: String) -> String {
+        if path.hasPrefix("http://") || path.hasPrefix("https://") {
+            return path
+        }
+
+        return "\(APIService.shared.syncBaseURL)\(path)"
+    }
+
+    func resetReelForm() {
+        reelTopic = ""
+        reelReferenceVideoURL = nil
     }
 }

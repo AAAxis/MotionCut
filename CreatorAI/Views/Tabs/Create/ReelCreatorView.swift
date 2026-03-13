@@ -53,69 +53,11 @@ struct ReelCreatorView: View {
             SectionLabel("INFLUENCER / AVATAR")
             AvatarPickerView(viewModel: viewModel)
                 .padding(.bottom, 20)
-
-
-
-            // Progress Steps
-            if viewModel.isLoading, let progress = viewModel.genProgress {
-                VStack(spacing: 0) {
-                    ForEach(ReelStep.allCases, id: \.rawValue) { step in
-                        let currentIdx = ReelStep.allCases.firstIndex(of: currentReelStep(progress.step)) ?? 0
-                        let thisIdx = ReelStep.allCases.firstIndex(of: step) ?? 0
-                        let isActive = step.rawValue == progress.step
-                        let isDone = thisIdx < currentIdx || progress.step == "done"
-                        let isPending = thisIdx > currentIdx
-
-                        HStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .fill(isDone ? theme.success.opacity(0.12) : isActive ? theme.primary.opacity(0.12) : theme.border.opacity(0.4))
-                                    .frame(width: 32, height: 32)
-
-                                if isDone {
-                                    Image(systemName: "checkmark.circle.fill")
-                                        .font(.system(size: 18))
-                                        .foregroundColor(theme.success)
-                                } else if isActive {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                        .tint(theme.primary)
-                                } else {
-                                    Image(systemName: step.icon)
-                                        .font(.system(size: 14))
-                                        .foregroundColor(theme.textTertiary)
-                                }
-                            }
-
-                            Text(isActive && step == .rendering ? progress.message : step.label)
-                                .font(.system(size: 14, weight: isActive ? .semibold : .regular))
-                                .foregroundColor(isDone ? theme.success : isActive ? theme.text : theme.textTertiary)
-
-                            Spacer()
-                        }
-                        .padding(.vertical, 8)
-                        .opacity(isPending ? 0.35 : 1)
-                    }
-                }
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(theme.surfaceElevated)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16)
-                                .stroke(theme.border, lineWidth: 1)
-                        )
-                )
-                .padding(.bottom, 16)
-            }
-
             // Generate Button
             Button {
                 dismissKeyboard()
                 Task {
-                    if let params = await viewModel.generateReel(appState: appState) {
-                        NotificationService.shared.requestPermissionIfNeeded()
-                        _ = await BackgroundRenderService.shared.startExport(fromReelParams: params)
+                    if await viewModel.generateReel(appState: appState) {
                         NotificationCenter.default.post(name: .switchToLibraryTab, object: nil)
                     }
                 }
@@ -124,7 +66,7 @@ struct ReelCreatorView: View {
                     if viewModel.isLoading {
                         ProgressView()
                             .tint(.white)
-                        Text(viewModel.genProgress?.message ?? "Generating...")
+                        Text("Generating...")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.white)
                     } else {
@@ -145,10 +87,6 @@ struct ReelCreatorView: View {
             }
             .disabled(viewModel.isLoading)
         }
-    }
-
-    private func currentReelStep(_ stepString: String) -> ReelStep {
-        ReelStep(rawValue: stepString) ?? .scenario
     }
 }
 

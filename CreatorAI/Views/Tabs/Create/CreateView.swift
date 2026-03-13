@@ -20,7 +20,6 @@ struct CreateView: View {
                     ForEach(CreateMode.allCases, id: \.rawValue) { mode in
                         Button {
                             viewModel.mode = mode
-                            viewModel.genProgress = nil
                         } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: mode.icon)

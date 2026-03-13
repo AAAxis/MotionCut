@@ -27,6 +27,15 @@ struct ReelResult: Codable {
     let hook: String?
 }
 
+struct ReelGenerateResponse: Codable {
+    let success: Bool?
+    let hook: String?
+    let subtitle: String?
+    let search: [String]?
+    let duration: Int?
+    let downloadUrl: String?
+}
+
 struct PreviewRequest: Encodable {
     let url: String
 }
@@ -76,18 +85,15 @@ actor GenerationService {
 
     private let api = APIService.shared
 
-    // MARK: - Quick Reel (SSE)
+    // MARK: - Single Reel Video
 
     func generateReel(
         topic: String,
         language: String,
         duration: Int,
         influencerId: String?,
-        referenceVideoUrl: String?,
-        onProgress: @escaping @Sendable (ReelProgress) -> Void,
-        onDone: @escaping @Sendable (ReelResult) -> Void,
-        onError: @escaping @Sendable (String) -> Void
-    ) async {
+        referenceVideoUrl: String?
+    ) async throws -> ReelGenerateResponse {
         let request = ReelRequest(
             topic: topic,
             language: language,
@@ -96,33 +102,7 @@ actor GenerationService {
             referenceVideoUrl: referenceVideoUrl
         )
 
-        do {
-            try await api.streamSSE(path: "/api/reels/plan", body: request) { event in
-                guard let data = event.data.data(using: .utf8) else { return }
-
-                switch event.event {
-                case "progress":
-                    if let payload = try? JSONDecoder().decode([String: String].self, from: data) {
-                        onProgress(ReelProgress(
-                            step: payload["step"] ?? "",
-                            message: payload["message"] ?? ""
-                        ))
-                    }
-                case "done":
-                    if let result = try? JSONDecoder().decode(ReelResult.self, from: data) {
-                        onDone(result)
-                    }
-                case "error":
-                    if let payload = try? JSONDecoder().decode([String: String].self, from: data) {
-                        onError(payload["error"] ?? "Generation failed")
-                    }
-                default:
-                    break
-                }
-            }
-        } catch {
-            onError(error.localizedDescription)
-        }
+        return try await api.post("/api/reels/generate", body: request)
     }
 
     // MARK: - Video Ad
