@@ -114,9 +114,6 @@ private struct ReelLaunchCelebrationView: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                Color.black.opacity(0.16)
-                    .ignoresSafeArea()
-
                 ForEach(0..<18, id: \.self) { index in
                     Circle()
                         .fill(colors[index % colors.count])
