@@ -29,6 +29,11 @@ actor APIService {
     static let shared = APIService()
 
     let baseURL: String
+    
+    // Non-isolated accessor for use in synchronous contexts (e.g. AsyncImage URLs)
+    nonisolated var syncBaseURL: String {
+        ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+    }
 
     private init() {
         self.baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"

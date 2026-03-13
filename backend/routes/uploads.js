@@ -171,4 +171,80 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// POST /api/uploads/image — upload an avatar/reference image
+const imageStorage = multer.diskStorage({
+  destination: UPLOADS_DIR,
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || '.jpg';
+    cb(null, 'avatar_' + uuid() + ext);
+  }
+});
+
+const imageUpload = multer({
+  storage: imageStorage,
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20MB max
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.heic'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed (jpg, png, webp, heic)'));
+    }
+  }
+});
+
+router.post('/image', imageUpload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file provided' });
+  }
+
+  const userId = req.body.userId || null;
+  const name = req.body.name || 'Custom Avatar';
+  const id = uuid();
+  const fileUrl = `/uploads/${req.file.filename}`;
+
+  try {
+    await req.db.query(
+      `INSERT INTO avatar_uploads (id, user_id, name, filename, file_url, file_size, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+      [id, userId, name, req.file.originalname, fileUrl, req.file.size]
+    );
+
+    console.log(`🖼️ Avatar uploaded: ${id} (${req.file.originalname})`);
+
+    res.json({
+      id,
+      name,
+      url: fileUrl,
+      filename: req.file.originalname,
+      fileSize: req.file.size,
+    });
+  } catch (err) {
+    console.error('Image upload error:', err.message);
+    res.status(500).json({ error: 'Failed to process upload' });
+  }
+});
+
+// GET /api/uploads/avatars/:userId — list uploaded avatars for a user
+router.get('/avatars/:userId', async (req, res) => {
+  try {
+    const result = await req.db.query(
+      'SELECT * FROM avatar_uploads WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50',
+      [req.params.userId]
+    );
+    res.json({
+      avatars: result.rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        url: r.file_url,
+        filename: r.filename,
+        createdAt: r.created_at
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list avatars' });
+  }
+});
+
 module.exports = router;

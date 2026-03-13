@@ -100,8 +100,19 @@ async function init() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS avatar_uploads (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      name TEXT DEFAULT 'Custom Avatar',
+      filename TEXT,
+      file_url TEXT,
+      file_size BIGINT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_avatars_user ON avatars(user_id);
     CREATE INDEX IF NOT EXISTS idx_uploads_user ON video_uploads(user_id);
+    CREATE INDEX IF NOT EXISTS idx_avatar_uploads_user ON avatar_uploads(user_id);
   `);
 
   app.listen(PORT, '0.0.0.0', () => {

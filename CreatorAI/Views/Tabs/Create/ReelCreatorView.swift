@@ -44,56 +44,8 @@ struct ReelCreatorView: View {
 
             // Influencer / Avatar
             SectionLabel("INFLUENCER / AVATAR")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(PRESET_AVATARS) { avatar in
-                        Button {
-                            viewModel.reelInfluencerId = avatar.id
-                        } label: {
-                            VStack(spacing: 6) {
-                                Image(systemName: avatar.iconName)
-                                    .font(.system(size: 32))
-                                    .foregroundColor(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.textSecondary)
-                                Text(avatar.name)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.text)
-                            }
-                            .frame(width: 72, height: 72)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14)
-                                    .fill(viewModel.reelInfluencerId == avatar.id ? theme.primary.opacity(0.12) : theme.surfaceElevated)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 14)
-                                            .stroke(viewModel.reelInfluencerId == avatar.id ? theme.primary : theme.border, lineWidth: viewModel.reelInfluencerId == avatar.id ? 2 : 1)
-                                    )
-                            )
-                        }
-                    }
-                    // Create your own
-                    Button {
-                        viewModel.reelInfluencerId = "custom"
-                    } label: {
-                        VStack(spacing: 6) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 28))
-                                .foregroundColor(viewModel.reelInfluencerId == "custom" ? theme.primary : theme.textTertiary)
-                            Text("Create own")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(viewModel.reelInfluencerId == "custom" ? theme.primary : theme.textSecondary)
-                        }
-                        .frame(width: 72, height: 72)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14)
-                                .fill(viewModel.reelInfluencerId == "custom" ? theme.primary.opacity(0.12) : theme.surfaceElevated)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 14)
-                                        .stroke(viewModel.reelInfluencerId == "custom" ? theme.primary : theme.border, lineWidth: viewModel.reelInfluencerId == "custom" ? 2 : 1)
-                                )
-                        )
-                    }
-                }
-            }
-            .padding(.bottom, 20)
+            AvatarPickerView(viewModel: viewModel)
+                .padding(.bottom, 20)
 
             // Reference video (for movement)
             SectionLabel("REFERENCE VIDEO (copy movement)")
