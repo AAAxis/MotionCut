@@ -186,28 +186,40 @@ actor GenerationService {
     // MARK: - AI Create via Replicate
     
     func startAICreate(modelId: String, prompt: String, imageUrl: String?, duration: Int, userId: String?) async throws -> AICreateResponse {
-        let baseURL = api.baseURL.replacingOccurrences(of: "http://", with: "https://")
+        let body: [String: Any?] = [
+            "modelId": modelId,
+            "prompt": prompt,
+            "imageUrl": imageUrl,
+            "duration": duration,
+            "userId": userId
+        ]
+        let jsonData = try JSONSerialization.data(withJSONObject: body.compactMapValues { $0 })
+        
+        let baseURL = api.baseURL
         guard let url = URL(string: "\(baseURL)/api/create/generate") else {
             throw APIError.invalidURL
         }
         
-        let request = AICreateRequest(modelId: modelId, prompt: prompt, imageUrl: imageUrl, duration: duration, userId: userId)
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = "POST"
         urlRequest.timeoutInterval = 30
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.httpBody = try JSONEncoder().encode(request)
+        urlRequest.httpBody = jsonData
+        
+        print("[AICreate] POST \(url.absoluteString) body=\(String(data: jsonData, encoding: .utf8) ?? "")")
         
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+        print("[AICreate] Response: \(statusCode) \(String(data: data, encoding: .utf8) ?? "")")
+        
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            let errorBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw APIError.httpError((response as? HTTPURLResponse)?.statusCode ?? 500)
+            throw APIError.httpError(statusCode)
         }
         return try JSONDecoder().decode(AICreateResponse.self, from: data)
     }
     
     func pollAICreate(id: String) async throws -> AICreateStatus {
-        let baseURL = api.baseURL.replacingOccurrences(of: "http://", with: "https://")
+        let baseURL = api.baseURL
         guard let url = URL(string: "\(baseURL)/api/create/status/\(id)") else {
             throw APIError.invalidURL
         }

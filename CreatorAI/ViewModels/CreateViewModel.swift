@@ -181,6 +181,7 @@ class CreateViewModel: ObservableObject {
 
         Task.detached(priority: .background) {
             do {
+                print("[Generate] influencerId=\(influencerId), hasSlash=\(influencerId.contains("/")), avatarImageURL=\(String(describing: avatarImageURL)), referenceVideoURL=\(String(describing: referenceVideoURL))")
                 if influencerId.contains("/") {
                     // AI model selected (e.g. "bytedance/seedance-1-lite") → Replicate
                     let imageUrl: String? = avatarImageURL
