@@ -111,6 +111,13 @@ struct AvatarPickerView: View {
                                 )
                         )
                     }
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            Task { await deleteAvatar(avatar) }
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
                 }
                 
                 // 5th: CREATE OWN — upload photo (always last)
@@ -286,6 +293,27 @@ struct AvatarPickerView: View {
             }
         } catch {
             print("Failed to load avatars: \(error)")
+        }
+    }
+    
+    private func deleteAvatar(_ avatar: UploadedAvatar) async {
+        let baseURL = await APIService.shared.baseURL
+        let httpsBase = baseURL.replacingOccurrences(of: "http://", with: "https://")
+        guard let url = URL(string: "\(httpsBase)/api/uploads/avatar/\(avatar.id)") else { return }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        
+        do {
+            let _ = try await URLSession.shared.data(for: request)
+            await MainActor.run {
+                uploadedAvatars.removeAll { $0.id == avatar.id }
+                if viewModel.reelInfluencerId == avatar.id {
+                    viewModel.reelInfluencerId = PRESET_AI_MODELS.first?.id ?? ""
+                }
+            }
+        } catch {
+            print("Failed to delete avatar: \(error)")
         }
     }
     

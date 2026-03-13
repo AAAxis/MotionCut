@@ -247,4 +247,19 @@ router.get('/avatars/:userId', async (req, res) => {
   }
 });
 
+// DELETE /api/uploads/avatar/:id
+router.delete('/avatar/:id', async (req, res) => {
+  try {
+    const result = await req.db.query('SELECT file_url FROM avatar_uploads WHERE id = $1', [req.params.id]);
+    if (result.rows.length && result.rows[0].file_url) {
+      const filePath = path.join(__dirname, '..', result.rows[0].file_url);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    await req.db.query('DELETE FROM avatar_uploads WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete avatar' });
+  }
+});
+
 module.exports = router;

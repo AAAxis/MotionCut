@@ -11,6 +11,7 @@ const avatarsRoutes = require('./routes/avatars');
 const uploadsRoutes = require('./routes/uploads');
 const influencerRoutes = require('./routes/influencer');
 const modelsRoutes = require('./routes/models');
+const createRoutes = require('./routes/create');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -39,6 +40,7 @@ app.use('/api/avatars', avatarsRoutes);
 app.use('/api/uploads', uploadsRoutes);
 app.use('/api/influencer', influencerRoutes);
 app.use('/api/models', modelsRoutes);
+app.use('/api/create', createRoutes);
 app.use('/uploads', express.static('uploads'));
 app.use('/avatars', express.static('avatars'));
 
@@ -99,6 +101,25 @@ async function init() {
       status TEXT DEFAULT 'ready',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS ai_generations (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      model_id TEXT,
+      mode TEXT,
+      prompt TEXT,
+      image_url TEXT,
+      duration INT DEFAULT 5,
+      replicate_id TEXT,
+      status TEXT DEFAULT 'starting',
+      output_url TEXT,
+      error TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_gen_user ON ai_generations(user_id);
+    CREATE INDEX IF NOT EXISTS idx_ai_gen_status ON ai_generations(status);
 
     CREATE TABLE IF NOT EXISTS avatar_uploads (
       id TEXT PRIMARY KEY,
