@@ -16,6 +16,14 @@ struct AvatarPickerView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var uploadedAvatars: [UploadedAvatar] = []
     @State private var isUploading = false
+
+    private var latestUploadedAvatar: UploadedAvatar? {
+        uploadedAvatars.first
+    }
+
+    private var isUploadedAvatarSelected: Bool {
+        uploadedAvatars.contains { $0.id == viewModel.reelInfluencerId }
+    }
     
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -74,7 +82,7 @@ struct AvatarPickerView: View {
                                     .frame(width: 48, height: 48)
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             } else {
-                                AsyncImage(url: URL(string: "\(APIService.shared.syncBaseURL)\(avatar.url)")) { phase in
+                                AsyncImage(url: uploadedAvatarURL(for: avatar)) { phase in
                                     switch phase {
                                     case .success(let image):
                                         image
@@ -117,28 +125,47 @@ struct AvatarPickerView: View {
                         if isUploading {
                             ProgressView()
                                 .frame(width: 48, height: 48)
+                        } else if let avatar = latestUploadedAvatar, let image = avatar.image {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                         } else {
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(theme.primary.opacity(0.15))
-                                    .frame(width: 48, height: 48)
-                                Image(systemName: "camera.fill")
-                                    .font(.system(size: 22))
-                                    .foregroundColor(theme.primary)
+                            AsyncImage(url: latestUploadedAvatar.flatMap { uploadedAvatarURL(for: $0) }) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                default:
+                                    ZStack {
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .fill(theme.primary.opacity(0.15))
+                                            .frame(width: 48, height: 48)
+                                        Image(systemName: "camera.fill")
+                                            .font(.system(size: 22))
+                                            .foregroundColor(theme.primary)
+                                    }
+                                }
                             }
                         }
                         Text("Your photo")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(theme.primary)
+                            .foregroundColor(isUploadedAvatarSelected ? theme.primary : theme.text)
                     }
                     .frame(width: 72, height: 72)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
-                            .fill(theme.primary.opacity(0.08))
+                            .fill(isUploadedAvatarSelected ? theme.primary.opacity(0.12) : theme.primary.opacity(0.08))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
-                                    .strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
-                                    .foregroundColor(theme.primary.opacity(0.5))
+                                    .stroke(
+                                        isUploadedAvatarSelected ? theme.primary : theme.primary.opacity(0.5),
+                                        style: StrokeStyle(lineWidth: 2, dash: [6, 4])
+                                    )
                             )
                     )
                 }
@@ -150,8 +177,8 @@ struct AvatarPickerView: View {
             Task { await handleImagePick(item) }
         }
         .onAppear {
-            // Default to first AI model
-            if viewModel.reelInfluencerId.hasPrefix("avatar_") || viewModel.reelInfluencerId == "custom" {
+            // Only replace the legacy default, not uploaded avatar ids from the backend.
+            if viewModel.reelInfluencerId == "avatar_1" || viewModel.reelInfluencerId == "custom" {
                 viewModel.reelInfluencerId = PRESET_AI_MODELS.first?.id ?? ""
             }
             Task { await loadUploadedAvatars() }
@@ -177,6 +204,7 @@ struct AvatarPickerView: View {
             let result = try await uploadAvatarImage(jpegData: jpegData, filename: "avatar_\(UUID().uuidString).jpg")
             let avatar = UploadedAvatar(id: result.id, name: result.name, url: result.url, image: resized)
             await MainActor.run {
+                uploadedAvatars.removeAll { $0.id == avatar.id }
                 uploadedAvatars.insert(avatar, at: 0)
                 viewModel.reelInfluencerId = avatar.id
             }
@@ -186,7 +214,7 @@ struct AvatarPickerView: View {
     }
     
     private func uploadAvatarImage(jpegData: Data, filename: String) async throws -> (id: String, name: String, url: String) {
-        let baseURL = await APIService.shared.baseURL
+        let baseURL = APIService.shared.baseURL
         let url = URL(string: "\(baseURL)/api/uploads/image")!
         
         var request = URLRequest(url: url)
@@ -227,7 +255,7 @@ struct AvatarPickerView: View {
     
     private func loadUploadedAvatars() async {
         let userId = appState.userId ?? "demo-user"
-        let baseURL = await APIService.shared.baseURL
+        let baseURL = APIService.shared.baseURL
         guard let url = URL(string: "\(baseURL)/api/uploads/avatars/\(userId)") else { return }
         
         do {
@@ -242,8 +270,18 @@ struct AvatarPickerView: View {
             }
             let response = try JSONDecoder().decode(AvatarsResponse.self, from: data)
             await MainActor.run {
+                let existingImagesByID = [String: UIImage](uniqueKeysWithValues: uploadedAvatars.compactMap { avatar in
+                    guard let image = avatar.image else { return nil }
+                    return (avatar.id, image)
+                })
+
                 uploadedAvatars = response.avatars.map {
-                    UploadedAvatar(id: $0.id, name: $0.name, url: $0.url)
+                    UploadedAvatar(
+                        id: $0.id,
+                        name: $0.name,
+                        url: $0.url,
+                        image: existingImagesByID[$0.id]
+                    )
                 }
             }
         } catch {
@@ -260,5 +298,13 @@ struct AvatarPickerView: View {
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
+    }
+
+    private func uploadedAvatarURL(for avatar: UploadedAvatar) -> URL? {
+        if avatar.url.hasPrefix("http://") || avatar.url.hasPrefix("https://") {
+            return URL(string: avatar.url)
+        }
+
+        return URL(string: "\(APIService.shared.syncBaseURL)\(avatar.url)")
     }
 }
