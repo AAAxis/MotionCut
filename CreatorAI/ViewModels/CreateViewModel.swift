@@ -140,8 +140,8 @@ class CreateViewModel: ObservableObject {
 
     // Credits per second per model (must match server config/credits.js)
     var reelCreditCost: Int {
-        // Custom photo (image-to-video) is free
-        if reelAvatarImageURL != nil { return 0 }
+        // Custom photo (image-to-video) = flat 10 credits
+        if reelAvatarImageURL != nil { return 10 }
         let perSecond: Int
         switch reelInfluencerId {
         case "bytedance/seedance-1-lite": perSecond = 1
