@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.services)
+    // alias(libs.plugins.google.services)  // re-enable after adding google-services.json
 }
 
 android {
@@ -73,4 +73,8 @@ dependencies {
 
     implementation(libs.play.services.auth)
     implementation(libs.coroutines.android)
+    implementation(libs.appcompat)
+    implementation(libs.credentials)
+    implementation(libs.credentials.play.services)
+    implementation(libs.googleid)
 }

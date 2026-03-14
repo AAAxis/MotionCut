@@ -15,6 +15,9 @@ security-crypto = "1.1.0-alpha06"
 google-services-plugin = "4.4.2"
 play-services-auth = "21.2.0"
 coroutines = "1.8.1"
+appcompat = "1.7.0"
+credentials = "1.3.0"
+googleid = "1.1.1"
 
 [libraries]
 # AndroidX
@@ -52,6 +55,10 @@ play-services-auth = { group = "com.google.android.gms", name = "play-services-a
 
 # Coroutines
 coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
+credentials-play-services = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }
+googleid = { group = "com.google.android.libraries.identity.googleid", name = "googleid", version.ref = "googleid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

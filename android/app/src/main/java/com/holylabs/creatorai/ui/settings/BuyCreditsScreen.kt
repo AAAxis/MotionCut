@@ -131,7 +131,7 @@ private fun CreditPackageCard(
     isDisabled: Boolean,
     onClick: () -> Unit,
 ) {
-    val product = pkg.storeProduct
+    val product = pkg.product
     val title = product.title.ifBlank { pkg.identifier }
     val price = product.price.formatted
 
