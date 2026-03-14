@@ -25,6 +25,15 @@ const FAL_VIDEO_MODEL = 'fal-ai/pixverse/v4/text-to-video';
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
+// Voice per language (MiniMax Speech-02-HD)
+const VOICES = {
+  en: { voice_id: 'English_CaptivatingStoryteller', lang: 'English' },
+  ru: { voice_id: 'Russian_AmbitiousWoman', lang: 'Russian' },
+  es: { voice_id: 'Spanish_CaptivatingStoryteller', lang: 'Spanish' },
+  fr: { voice_id: 'French_MovieLeadFemale', lang: 'French' },
+  de: { voice_id: 'German_SweetLady', lang: 'German' },
+};
+
 // ===== Replicate (TTS only) =====
 async function replicatePost(urlPath, body, retries = 5) {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -76,7 +85,7 @@ async function falGenerate(prompt) {
 }
 
 // ===== Script generation =====
-async function generateScript(productInfo, userNotes) {
+async function generateScript(productInfo, userNotes, langName = 'English') {
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${OPENROUTER_KEY}`, 'Content-Type': 'application/json' },
@@ -84,13 +93,15 @@ async function generateScript(productInfo, userNotes) {
       model: 'google/gemini-2.0-flash-001',
       messages: [{ role: 'user', content: `You are a viral short-form video scriptwriter. Write a 15-second voiceover script for a product ad video.
 
+LANGUAGE: Write the ENTIRE script in ${langName}. Every word must be in ${langName}.
+
 Product: ${productInfo.title || 'Unknown product'}
 Description: ${productInfo.description || 'N/A'}
 Website: ${productInfo.domain || 'N/A'}
 ${userNotes ? `Creative direction: ${userNotes}` : ''}
 
 STRICT RULES:
-- Output ONLY the spoken words. Nothing else.
+- Output ONLY the spoken words in ${langName}. Nothing else.
 - Do NOT include stage directions, notes, labels, or formatting
 - Do NOT repeat or paraphrase the creative direction
 - About 40-50 words (15 seconds when spoken)
@@ -98,7 +109,7 @@ STRICT RULES:
 - Mention 1-2 key benefits naturally
 - End with a clear call to action
 - Conversational, energetic, authentic tone` }],
-      max_tokens: 150,
+      max_tokens: 200,
     }),
   });
   const data = await res.json();
@@ -156,8 +167,9 @@ function mergeVideosWithAudio(videoPaths, audioPath, outputPath) {
 // ===== Routes =====
 router.post('/generate', async (req, res) => {
   try {
-    const { url, notes, userId } = req.body;
+    const { url, notes, userId, language = 'en' } = req.body;
     if (!url) return res.status(400).json({ error: 'url is required' });
+    const voice = VOICES[language] || VOICES.en;
 
     const adCost = OPERATION_CREDITS['ad-maker'];
     if (userId) {
@@ -192,7 +204,7 @@ router.post('/generate', async (req, res) => {
 
         // Step 2: Script + video prompts in parallel
         console.log(`[Ad] ${id} Script + prompts...`);
-        const script = await generateScript(productInfo, notes);
+        const script = await generateScript(productInfo, notes, voice.lang);
         console.log(`[Ad] ${id} Script: "${script}"`);
         const videoPrompts = await generateVideoPrompts(productInfo, script);
         console.log(`[Ad] ${id} Prompts:`, videoPrompts);
@@ -204,7 +216,7 @@ router.post('/generate', async (req, res) => {
           // TTS on Replicate
           (async () => {
             const ttsPred = await replicatePost(`/v1/models/${TTS_MODEL}/predictions`, {
-              input: { text: script, voice_id: 'Wise_Woman', speed: 1.1, emotion: 'happy' },
+              input: { text: script, voice_id: voice.voice_id, speed: 1.1, emotion: 'happy' },
             });
             if (!ttsPred.id) throw new Error(`TTS failed: ${JSON.stringify(ttsPred).substring(0, 200)}`);
             const result = await pollReplicate(ttsPred.id, 60000);
