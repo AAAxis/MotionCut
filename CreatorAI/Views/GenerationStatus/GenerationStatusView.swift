@@ -101,15 +101,25 @@ struct GenerationStatusView: View {
             }
             .padding(.horizontal, 24)
 
-            // Skip button (continues in background)
-            if viewModel.status == "processing" {
+            // Skip button (always visible when not completed/failed)
+            if viewModel.status != "completed" {
                 Button {
                     dismiss()
                 } label: {
-                    Text("Continue in background")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(theme.textSecondary)
-                        .padding(.top, 24)
+                    HStack(spacing: 8) {
+                        Image(systemName: "arrow.uturn.left")
+                            .font(.system(size: 14))
+                        Text("Continue in background")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 14)
+                    .background(
+                        Capsule()
+                            .fill(theme.surfaceElevated)
+                    )
+                    .padding(.top, 32)
                 }
             }
 
