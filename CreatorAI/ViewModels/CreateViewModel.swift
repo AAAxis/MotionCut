@@ -361,21 +361,29 @@ class CreateViewModel: ObservableObject {
             
             // Poll in background and update when done
             Task.detached(priority: .background) {
+                let baseURL = await GenerationService.shared.getBaseURL()
                 let deadline = Date().addingTimeInterval(300)
                 while Date() < deadline {
                     try? await Task.sleep(nanoseconds: 5_000_000_000)
                     do {
-                        let status = try await GenerationService.shared.getGenerationStatus(id: generationId)
-                        if status.status == "completed", let videoUrl = status.resultVideoUrl {
-                            await GenerationService.shared.updateGeneration(
-                                id: generationId,
-                                status: .completed,
-                                remoteVideoUrl: videoUrl
-                            )
-                            return
-                        } else if status.status == "failed" {
-                            await GenerationService.shared.updateGeneration(id: generationId, status: .failed)
-                            return
+                        guard let statusURL = URL(string: "\(baseURL)/api/ads/status/\(generationId)") else { continue }
+                        let (data, _) = try await URLSession.shared.data(from: statusURL)
+                        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                           let status = json["status"] as? String {
+                            if status == "succeeded" {
+                                let output = json["output"] as? [String: Any]
+                                let download = output?["download"] as? String
+                                let videoUrl = download != nil ? "\(baseURL)\(download!)" : nil
+                                await GenerationService.shared.updateGeneration(
+                                    id: generationId,
+                                    status: .completed,
+                                    remoteVideoUrl: videoUrl
+                                )
+                                return
+                            } else if status == "failed" {
+                                await GenerationService.shared.updateGeneration(id: generationId, status: .failed)
+                                return
+                            }
                         }
                     } catch { }
                 }

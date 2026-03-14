@@ -170,6 +170,10 @@ actor GenerationService {
     static let shared = GenerationService()
 
     private let api = APIService.shared
+    
+    func getBaseURL() -> String {
+        api.syncBaseURL
+    }
 
     // MARK: - Single Reel Video
 
