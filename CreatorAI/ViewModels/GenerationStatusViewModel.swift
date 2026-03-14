@@ -85,7 +85,7 @@ class GenerationStatusViewModel: ObservableObject {
     private func checkStatus() async {
         let response: GenerationStatusResponse
         if isLocalExport || generationType == .reel {
-            response = GenerationService.shared.getLocalGenerationStatus(id: generationId)
+            response = await GenerationService.shared.getLocalGenerationStatus(id: generationId)
         } else {
             do {
                 response = try await GenerationService.shared.getGenerationStatus(id: generationId)
