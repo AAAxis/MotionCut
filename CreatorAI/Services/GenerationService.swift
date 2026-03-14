@@ -360,9 +360,10 @@ actor GenerationService {
             )
         }
         // Fall back to create endpoint
-        if let createStatus = try? await api.get("/api/create/status/\(id)") as AICreateStatus {
+        if let createStatus = try? await api.get("/api/create/status/\(id)") as AICreateStatus,
+           let createStatusStr = createStatus.status {
             return GenerationStatusResponse(
-                status: createStatus.status == "succeeded" ? "completed" : createStatus.status,
+                status: createStatusStr == "succeeded" ? "completed" : createStatusStr,
                 resultVideoUrl: createStatus.outputUrl,
                 error: createStatus.error
             )
