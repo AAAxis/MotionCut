@@ -19,12 +19,14 @@ struct AvatarPickerView: View {
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var uploadedAvatars: [UploadedAvatar] = []
     @State private var isUploading = false
+    @State private var localPickedImage: UIImage?
 
     private var latestUploadedAvatar: UploadedAvatar? {
         uploadedAvatars.first
     }
 
     private var isUploadedAvatarSelected: Bool {
+        viewModel.reelInfluencerId == "custom_photo" ||
         uploadedAvatars.contains { $0.id == viewModel.reelInfluencerId }
     }
     
@@ -132,6 +134,12 @@ struct AvatarPickerView: View {
                         if isUploading {
                             ProgressView()
                                 .frame(width: 48, height: 48)
+                        } else if let img = localPickedImage {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
                         } else if let avatar = latestUploadedAvatar, let image = avatar.image {
                             Image(uiImage: image)
                                 .resizable()
@@ -207,6 +215,12 @@ struct AvatarPickerView: View {
         let resized = resizeImage(uiImage, maxSize: 1024)
         guard let jpegData = resized.jpegData(compressionQuality: 0.85) else { return }
         
+        // Show photo locally IMMEDIATELY
+        await MainActor.run {
+            localPickedImage = resized
+            viewModel.reelInfluencerId = "custom_photo"
+        }
+        
         do {
             let result = try await uploadAvatarImage(jpegData: jpegData, filename: "avatar_\(UUID().uuidString).jpg")
             let avatar = UploadedAvatar(id: result.id, name: result.name, url: result.url, image: resized)
@@ -218,6 +232,12 @@ struct AvatarPickerView: View {
             }
         } catch {
             print("Avatar upload failed: \(error)")
+            // Even if upload fails, keep the local image visible and use a local data URL
+            await MainActor.run {
+                let base64 = jpegData.base64EncodedString()
+                viewModel.reelInfluencerId = "custom_photo"
+                viewModel.reelAvatarImageURL = "data:image/jpeg;base64,\(base64)"
+            }
         }
     }
     
