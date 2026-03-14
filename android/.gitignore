@@ -1,0 +1,20 @@
+# Android
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.keystore
+!debug.keystore
+
+# Google services (contains project IDs but not secrets — add if you prefer to keep it out)
+# app/google-services.json
+
+# Generated
+app/src/main/res/drawable/ic_launcher_background.xml
+app/src/main/res/drawable-v24/ic_launcher_foreground.xml
+app/src/main/res/mipmap-*/
