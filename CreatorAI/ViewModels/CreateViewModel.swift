@@ -185,12 +185,24 @@ class CreateViewModel: ObservableObject {
                 if influencerId.contains("/") {
                     // AI model selected (e.g. "bytedance/seedance-1-lite") → Replicate
                     let imageUrl: String? = avatarImageURL
+                    
+                    // Upload reference video if provided (for audio extraction on server)
+                    var uploadedRefVideoURL: String? = nil
+                    if let localRef = referenceVideoURL {
+                        let uploadedVideo = try await GenerationService.shared.uploadReferenceVideo(
+                            fileURL: localRef,
+                            userId: userId
+                        )
+                        uploadedRefVideoURL = makeAbsoluteReelURL(uploadedVideo.url)
+                    }
+                    
                     let createResponse = try await GenerationService.shared.startAICreate(
                         modelId: influencerId,
                         prompt: topic,
                         imageUrl: imageUrl,
                         duration: duration,
-                        userId: userId
+                        userId: userId,
+                        referenceVideoUrl: uploadedRefVideoURL
                     )
                     
                     guard let createId = createResponse.id else {

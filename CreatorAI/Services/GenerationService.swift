@@ -213,13 +213,14 @@ actor GenerationService {
 
     // MARK: - AI Create via Replicate
     
-    func startAICreate(modelId: String, prompt: String, imageUrl: String?, duration: Int, userId: String?) async throws -> AICreateResponse {
+    func startAICreate(modelId: String, prompt: String, imageUrl: String?, duration: Int, userId: String?, referenceVideoUrl: String? = nil) async throws -> AICreateResponse {
         let body: [String: Any?] = [
             "modelId": modelId,
             "prompt": prompt,
             "imageUrl": imageUrl,
             "duration": duration,
-            "userId": userId
+            "userId": userId,
+            "referenceVideoUrl": referenceVideoUrl
         ]
         let jsonData = try JSONSerialization.data(withJSONObject: body.compactMapValues { $0 })
         

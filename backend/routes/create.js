@@ -12,6 +12,10 @@ const express = require('express');
 const router = express.Router();
 const { v4: uuid } = require('uuid');
 const { fal } = require('@fal-ai/client');
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
 const { calculateCost } = require('../config/credits');
 const { checkRateLimit, recordGeneration } = require('../middleware/rateLimit');
@@ -70,9 +74,27 @@ async function replicateAPI(method, path, body) {
 }
 
 // POST /api/create/generate
+// ===== Audio helpers =====
+async function downloadFile(url, filepath) {
+  const res = await fetch(url);
+  fs.writeFileSync(filepath, Buffer.from(await res.arrayBuffer()));
+}
+
+function extractAudioFromVideo(videoPath, audioPath) {
+  try {
+    execSync(`ffprobe -v error -select_streams a -show_entries stream=codec_type -of csv=p=0 "${videoPath}" 2>/dev/null`);
+    execSync(`ffmpeg -y -i "${videoPath}" -vn -acodec aac -b:a 128k "${audioPath}" 2>/dev/null`);
+    return fs.existsSync(audioPath);
+  } catch (e) { return false; }
+}
+
+function mergeVideoAudio(videoPath, audioPath, outputPath) {
+  execSync(`ffmpeg -y -i "${videoPath}" -i "${audioPath}" -c:v copy -c:a aac -map 0:v:0 -map 1:a:0 -shortest -movflags +faststart "${outputPath}" 2>/dev/null`);
+}
+
 router.post('/generate', async (req, res) => {
   try {
-    let { modelId, prompt, imageUrl, duration = 5, userId } = req.body;
+    let { modelId, prompt, imageUrl, duration = 5, userId, referenceVideoUrl } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'prompt is required' });
@@ -176,6 +198,24 @@ router.post('/generate', async (req, res) => {
       [id, userId || null, finalModel, mode, prompt, imageUrl || null, duration, prediction.id, prediction.status || 'starting', outputUrl]
     );
 
+    // Extract audio from reference video in background (for later merge)
+    if (referenceVideoUrl) {
+      (async () => {
+        try {
+          const tmpDir = path.join(os.tmpdir(), `create-audio-${id}`);
+          fs.mkdirSync(tmpDir, { recursive: true });
+          const refPath = path.join(tmpDir, 'ref.mp4');
+          await downloadFile(referenceVideoUrl, refPath);
+          const audioPath = `/tmp/create-audio-${id}.aac`;
+          const hasAudio = extractAudioFromVideo(refPath, audioPath);
+          console.log(`[Create] ${id} Reference audio: ${hasAudio ? 'extracted' : 'no audio track'}`);
+          try { fs.rmSync(tmpDir, { recursive: true }); } catch(e) {}
+        } catch (err) {
+          console.error(`[Create] ${id} Audio extraction failed:`, err.message);
+        }
+      })();
+    }
+
     // Record generation for rate limiting
     await recordGeneration(req.db, userId);
 
@@ -210,6 +250,27 @@ router.get('/status/:id', async (req, res) => {
         let outputUrl = gen.output_url;
         if (prediction.status === 'succeeded' && prediction.output) {
           outputUrl = Array.isArray(prediction.output) ? prediction.output[0] : prediction.output;
+          
+          // Merge reference audio if available
+          const audioFile = `/tmp/create-audio-${gen.id}.aac`;
+          if (fs.existsSync(audioFile)) {
+            try {
+              const tmpDir = path.join(os.tmpdir(), `create-merge-${gen.id}`);
+              fs.mkdirSync(tmpDir, { recursive: true });
+              const videoPath = path.join(tmpDir, 'video.mp4');
+              const mergedPath = path.join(tmpDir, 'merged.mp4');
+              await downloadFile(outputUrl, videoPath);
+              mergeVideoAudio(videoPath, audioFile, mergedPath);
+              const publicPath = `/tmp/create-${gen.id}-final.mp4`;
+              fs.copyFileSync(mergedPath, publicPath);
+              outputUrl = `/api/create/download/${gen.id}`;
+              console.log(`[Create] ${gen.id} Merged with reference audio`);
+              try { fs.rmSync(tmpDir, { recursive: true }); } catch(e) {}
+              try { fs.unlinkSync(audioFile); } catch(e) {}
+            } catch (mergeErr) {
+              console.error(`[Create] ${gen.id} Audio merge failed:`, mergeErr.message);
+            }
+          }
         }
         const errorMsg = prediction.status === 'failed' ? (prediction.error || 'Generation failed') : null;
 
@@ -254,6 +315,17 @@ router.get('/history', async (req, res) => {
     res.json({ generations: result.rows });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/create/download/:id — serve merged video with reference audio
+router.get('/download/:id', (req, res) => {
+  const filepath = `/tmp/create-${req.params.id}-final.mp4`;
+  if (fs.existsSync(filepath)) {
+    res.setHeader('Content-Type', 'video/mp4');
+    res.sendFile(filepath);
+  } else {
+    res.status(404).json({ error: 'Video not found or expired' });
   }
 });
 
