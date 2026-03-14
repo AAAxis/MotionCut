@@ -14,6 +14,7 @@ const { v4: uuid } = require('uuid');
 const { fal } = require('@fal-ai/client');
 
 const { calculateCost } = require('../config/credits');
+const { checkRateLimit, recordGeneration } = require('../middleware/rateLimit');
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 const FAL_KEY = process.env.FAL_KEY || '';
 
@@ -73,6 +74,14 @@ router.post('/generate', async (req, res) => {
 
     if (!prompt) {
       return res.status(400).json({ error: 'prompt is required' });
+    }
+
+    // Rate limit check
+    if (userId) {
+      const rateCheck = await checkRateLimit(req.db, userId);
+      if (!rateCheck.allowed) {
+        return res.status(429).json(rateCheck);
+      }
     }
 
     // Credit check
@@ -160,6 +169,9 @@ router.post('/generate', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()${usedFal ? ', NOW()' : ''})`,
       [id, userId || null, finalModel, mode, prompt, imageUrl || null, duration, prediction.id, prediction.status || 'starting', outputUrl]
     );
+
+    // Record generation for rate limiting
+    await recordGeneration(req.db, userId);
 
     res.json({
       success: true,

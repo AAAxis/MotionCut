@@ -14,6 +14,7 @@ const os = require('os');
 const { fal } = require('@fal-ai/client');
 
 const { OPERATION_CREDITS } = require('../config/credits');
+const { checkRateLimit, recordGeneration } = require('../middleware/rateLimit');
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || '';
 const FAL_KEY = process.env.FAL_KEY || '';
@@ -171,6 +172,14 @@ router.post('/generate', async (req, res) => {
     if (!url) return res.status(400).json({ error: 'url is required' });
     const voice = VOICES[language] || VOICES.en;
 
+    // Rate limit check
+    if (userId) {
+      const rateCheck = await checkRateLimit(req.db, userId);
+      if (!rateCheck.allowed) {
+        return res.status(429).json(rateCheck);
+      }
+    }
+
     const adCost = OPERATION_CREDITS['ad-maker'];
     if (userId) {
       const userCheck = await req.db.query('SELECT credits, is_subscribed FROM users WHERE external_id = $1', [userId]);
@@ -186,6 +195,7 @@ router.post('/generate', async (req, res) => {
       `INSERT INTO ad_generations (id, user_id, product_url, notes, status, step, created_at) VALUES ($1, $2, $3, $4, 'processing', 'scraping', NOW())`,
       [id, userId || null, url, notes || null]
     );
+    await recordGeneration(req.db, userId);
     res.json({ success: true, id, status: 'processing', step: 'scraping' });
 
     // Background pipeline

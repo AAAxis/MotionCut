@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const { calculateCost, OPERATION_CREDITS, IAP_PRODUCTS, FREE_CREDITS, MODEL_CREDITS_PER_SECOND } = require('../config/credits');
+const { calculateCost, OPERATION_CREDITS, IAP_PRODUCTS, FREE_CREDITS, MODEL_CREDITS_PER_SECOND, RATE_LIMITS } = require('../config/credits');
+const { checkRateLimit } = require('../middleware/rateLimit');
 
 // POST /api/credits/get
 router.post('/get', async (req, res) => {
@@ -21,9 +22,17 @@ router.post('/get', async (req, res) => {
   }
 
   const user = result.rows[0];
+  const rateInfo = await checkRateLimit(req.db, userId);
   res.json({
     credits: user.is_subscribed ? -1 : user.credits,
     isSubscribed: user.is_subscribed,
+    rateLimit: {
+      remaining: rateInfo.remaining ?? 0,
+      limit: rateInfo.limit ?? RATE_LIMITS.free.dailyGenerations,
+      tier: rateInfo.tier ?? 'free',
+      allowed: rateInfo.allowed,
+      message: rateInfo.message,
+    },
   });
 });
 
@@ -153,6 +162,7 @@ router.get('/pricing', (req, res) => {
       { productId: 'credits_300', credits: 300, price: '$24.99' },
     ],
     freeCredits: FREE_CREDITS,
+    rateLimits: RATE_LIMITS,
   });
 });
 

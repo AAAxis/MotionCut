@@ -33,6 +33,18 @@ const IAP_PRODUCTS = {
 // Free credits for new users
 const FREE_CREDITS = 10;
 
+// Rate limiting
+const RATE_LIMITS = {
+  free: {
+    dailyGenerations: 3,      // 3 generations per day
+    cooldownSeconds: 60,       // 60s between generations
+  },
+  paid: {
+    dailyGenerations: 50,      // 50/day — generous but not unlimited
+    cooldownSeconds: 10,       // 10s cooldown
+  },
+};
+
 function calculateCost(modelId, durationSeconds) {
   const perSecond = MODEL_CREDITS_PER_SECOND[modelId] || 2; // default 2 credits/sec
   return Math.ceil(perSecond * durationSeconds);
@@ -43,5 +55,6 @@ module.exports = {
   OPERATION_CREDITS,
   IAP_PRODUCTS,
   FREE_CREDITS,
+  RATE_LIMITS,
   calculateCost,
 };
