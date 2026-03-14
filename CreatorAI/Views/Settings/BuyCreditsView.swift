@@ -1,10 +1,11 @@
 import SwiftUI
+import RevenueCat
 
 struct BuyCreditsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @Environment(\.dismiss) var dismiss
-    @StateObject private var purchaseService = PurchaseService.shared
+    @ObservedObject private var purchaseService = PurchaseService.shared
 
     var body: some View {
         NavigationView {
@@ -36,29 +37,29 @@ struct BuyCreditsView: View {
 
                 Divider().background(theme.border)
 
-                // IAP products
+                // RevenueCat packages
                 VStack(spacing: 12) {
-                    ForEach(purchaseService.products, id: \.id) { product in
+                    ForEach(purchaseService.packages, id: \.identifier) { package in
                         Button {
                             Task {
-                                if await purchaseService.purchase(product, appState: appState) {
+                                if await purchaseService.purchase(package, appState: appState) {
                                     dismiss()
                                 }
                             }
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(creditLabel(for: product.id))
+                                    Text(creditLabel(for: package.storeProduct.productIdentifier))
                                         .font(.system(size: 17, weight: .semibold))
                                         .foregroundColor(theme.text)
-                                    Text(creditSubLabel(for: product.id))
+                                    Text(creditSubLabel(for: package.storeProduct.productIdentifier))
                                         .font(.system(size: 13))
                                         .foregroundColor(theme.textSecondary)
                                 }
 
                                 Spacer()
 
-                                Text(product.displayPrice)
+                                Text(package.localizedPriceString)
                                     .font(.system(size: 17, weight: .bold))
                                     .foregroundColor(.white)
                                     .padding(.horizontal, 16)
@@ -78,9 +79,10 @@ struct BuyCreditsView: View {
                                     )
                             )
                         }
+                        .disabled(purchaseService.isPurchasing)
                     }
 
-                    if purchaseService.products.isEmpty {
+                    if purchaseService.packages.isEmpty {
                         ProgressView()
                             .padding()
                         Text("Loading prices...")
@@ -89,6 +91,11 @@ struct BuyCreditsView: View {
                     }
                 }
                 .padding(.horizontal, 20)
+
+                if purchaseService.isPurchasing {
+                    ProgressView("Processing purchase...")
+                        .padding()
+                }
 
                 Spacer()
             }

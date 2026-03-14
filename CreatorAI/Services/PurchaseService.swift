@@ -1,104 +1,65 @@
 import Foundation
-import StoreKit
+import RevenueCat
 
-/// Credits-based IAP using StoreKit 2 (no subscriptions)
+/// Credits-based IAP via RevenueCat (consumable, no subscriptions)
 @MainActor
 class PurchaseService: ObservableObject {
     static let shared = PurchaseService()
 
-    @Published var products: [Product] = []
+    @Published var packages: [Package] = []
     @Published var isPurchasing = false
 
-    private let productIds = ["credits_100", "credits_200", "credits_300"]
     private let creditAmounts: [String: Int] = [
         "credits_100": 100,
         "credits_200": 200,
         "credits_300": 300,
     ]
 
-    private var transactionListener: Task<Void, Error>?
-
-    init() {
-        transactionListener = listenForTransactions()
-        Task { await loadProducts() }
+    func configure(userId: String) {
+        Purchases.configure(withAPIKey: "appl_XYZyourRevenueCatKey", appUserID: userId)
+        Purchases.shared.delegate = PurchaseDelegateHandler.shared
+        Task { await loadOfferings() }
     }
 
-    deinit {
-        transactionListener?.cancel()
-    }
-
-    func loadProducts() async {
+    func loadOfferings() async {
         do {
-            let storeProducts = try await Product.products(for: productIds)
-            products = storeProducts.sorted { $0.price < $1.price }
+            let offerings = try await Purchases.shared.offerings()
+            if let current = offerings.current {
+                packages = current.availablePackages
+            }
         } catch {
-            print("[IAP] Failed to load products: \(error)")
+            print("[IAP] Failed to load offerings: \(error)")
         }
     }
 
-    func purchase(_ product: Product, appState: AppState) async -> Bool {
+    func purchase(_ package: Package, appState: AppState) async -> Bool {
         isPurchasing = true
         defer { isPurchasing = false }
 
         do {
-            let result = try await product.purchase()
-            switch result {
-            case .success(let verification):
-                let transaction = try checkVerified(verification)
-                let creditsToAdd = creditAmounts[product.id] ?? 100
+            let result = try await Purchases.shared.purchase(package: package)
+
+            if !result.userCancelled {
+                let productId = package.storeProduct.productIdentifier
+                let creditsToAdd = creditAmounts[productId] ?? 100
 
                 // Add credits on server
-                await addCreditsOnServer(userId: appState.userId ?? "", amount: creditsToAdd)
+                await addCreditsOnServer(userId: appState.userId ?? "", productId: productId, amount: creditsToAdd)
                 appState.addCredits(creditsToAdd)
 
-                await transaction.finish()
-                print("[IAP] Purchase successful: \(product.id) → +\(creditsToAdd) credits")
+                print("[IAP] Purchase successful: \(productId) → +\(creditsToAdd) credits")
                 return true
-
-            case .userCancelled:
-                return false
-            case .pending:
-                return false
-            @unknown default:
-                return false
             }
+            return false
         } catch {
             print("[IAP] Purchase failed: \(error)")
             return false
         }
     }
 
-    func restorePurchases(appState: AppState) async {
-        // For consumable IAPs, there's nothing to restore
-        // Just sync credits from server
-        await appState.fetchCredits()
-    }
-
     // MARK: - Private
 
-    private func checkVerified<T>(_ result: VerificationResult<T>) throws -> T {
-        switch result {
-        case .unverified:
-            throw StoreError.failedVerification
-        case .verified(let safe):
-            return safe
-        }
-    }
-
-    private func listenForTransactions() -> Task<Void, Error> {
-        return Task.detached {
-            for await result in Transaction.updates {
-                do {
-                    let transaction = try self.checkVerified(result)
-                    await transaction.finish()
-                } catch {
-                    print("[IAP] Transaction update error: \(error)")
-                }
-            }
-        }
-    }
-
-    private func addCreditsOnServer(userId: String, amount: Int) async {
+    private func addCreditsOnServer(userId: String, productId: String, amount: Int) async {
         let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
         guard let url = URL(string: "\(baseURL)/api/credits/add") else { return }
 
@@ -107,7 +68,8 @@ class PurchaseService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: [
             "userId": userId,
-            "amount": amount
+            "productId": productId,
+            "amount": amount,
         ])
 
         do {
@@ -116,8 +78,14 @@ class PurchaseService: ObservableObject {
             print("[IAP] Failed to add credits on server: \(error)")
         }
     }
+}
 
-    enum StoreError: Error {
-        case failedVerification
+// MARK: - RevenueCat Delegate
+
+class PurchaseDelegateHandler: NSObject, PurchasesDelegate {
+    static let shared = PurchaseDelegateHandler()
+
+    func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
+        // No subscription logic — credits are server-side
     }
 }

@@ -18,6 +18,20 @@ class AppState: ObservableObject {
         self.hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
         self.credits = UserDefaults.standard.object(forKey: "user_credits") as? Int ?? 0
         loadToken()
+
+        // Configure RevenueCat
+        if let userIdData = KeychainHelper.load(service: keychainService, account: "userId"),
+           let userId = String(data: userIdData, encoding: .utf8) {
+            PurchaseService.shared.configure(userId: userId)
+        } else {
+            let key = "RevenueCatAnonymousId"
+            let anonymousId = UserDefaults.standard.string(forKey: key) ?? {
+                let id = UUID().uuidString
+                UserDefaults.standard.set(id, forKey: key)
+                return id
+            }()
+            PurchaseService.shared.configure(userId: anonymousId)
+        }
     }
 
     func loadToken() {
@@ -49,7 +63,7 @@ class AppState: ObservableObject {
         } else {
             KeychainHelper.delete(service: keychainService, account: "userEmail")
         }
-        // Fetch credits from server
+        PurchaseService.shared.configure(userId: userId)
         Task { await fetchCredits() }
     }
 
