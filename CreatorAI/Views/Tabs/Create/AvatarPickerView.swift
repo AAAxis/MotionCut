@@ -222,9 +222,8 @@ struct AvatarPickerView: View {
     }
     
     private func uploadAvatarImage(jpegData: Data, filename: String) async throws -> (id: String, name: String, url: String) {
-        let baseURL = await APIService.shared.baseURL
-        let httpsBase = baseURL.replacingOccurrences(of: "http://", with: "https://")
-        let url = URL(string: "\(httpsBase)/api/uploads/image")!
+        let baseURL = APIService.shared.syncBaseURL
+        let url = URL(string: "\(baseURL)/api/uploads/image")!
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
