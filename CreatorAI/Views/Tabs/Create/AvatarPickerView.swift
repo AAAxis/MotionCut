@@ -26,7 +26,7 @@ struct AvatarPickerView: View {
     }
 
     private var isUploadedAvatarSelected: Bool {
-        viewModel.reelInfluencerId == "custom_photo" ||
+        localPickedImage != nil ||
         uploadedAvatars.contains { $0.id == viewModel.reelInfluencerId }
     }
     
@@ -215,10 +215,11 @@ struct AvatarPickerView: View {
         let resized = resizeImage(uiImage, maxSize: 1024)
         guard let jpegData = resized.jpegData(compressionQuality: 0.85) else { return }
         
-        // Show photo locally IMMEDIATELY
+        // Show photo locally IMMEDIATELY — keep current AI model for text-to-video routing
         await MainActor.run {
             localPickedImage = resized
-            viewModel.reelInfluencerId = "custom_photo"
+            // Don't change reelInfluencerId — keep the AI model (e.g. "bytedance/seedance-1-lite")
+            // The photo will be sent as imageUrl for image-to-video generation
         }
         
         do {
@@ -232,12 +233,8 @@ struct AvatarPickerView: View {
             }
         } catch {
             print("Avatar upload failed: \(error)")
-            // Even if upload fails, keep the local image visible and use a local data URL
-            await MainActor.run {
-                let base64 = jpegData.base64EncodedString()
-                viewModel.reelInfluencerId = "custom_photo"
-                viewModel.reelAvatarImageURL = "data:image/jpeg;base64,\(base64)"
-            }
+            // Upload failed — keep local image visible, no avatar URL for server
+            // Generation will proceed as text-to-video (no image input)
         }
     }
     
