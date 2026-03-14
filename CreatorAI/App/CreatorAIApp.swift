@@ -25,7 +25,7 @@ struct CreatorAIApp: App {
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 AppsFlyerService.shared.start()
                 AppsFlyerService.shared.requestTrackingAuthorization()
-                Task { await PurchaseService.shared.refreshStatus() }
+                Task { await PurchaseService.shared.loadOfferings() }
             }
             .onOpenURL { url in
                 if let action = DeeplinkService.parse(url) {
