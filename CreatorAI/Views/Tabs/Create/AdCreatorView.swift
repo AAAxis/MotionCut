@@ -108,17 +108,18 @@ struct AdCreatorView: View {
             // Preview Card
             if let preview = viewModel.adPreview, viewModel.adStep != .input {
                 VStack(alignment: .leading, spacing: 12) {
-                    if let ogImage = preview.ogImage, let url = URL(string: ogImage) {
-                        AsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(height: 160)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                        } placeholder: {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(theme.surfaceElevated)
-                                .frame(height: 160)
+                    if let ogImage = preview.ogImage, !ogImage.isEmpty, let url = URL(string: ogImage) {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                                    .frame(height: 160)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            default:
+                                EmptyView()
+                            }
                         }
                     }
 
