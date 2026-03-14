@@ -292,7 +292,7 @@ class CreateViewModel: ObservableObject {
                 }
             } catch let error as APIError {
                 if case .httpError(402) = error {
-                    await MainActor.run { showBuyCredits = true }
+                    await MainActor.run { self.showBuyCredits = true }
                 }
                 print("[CreateViewModel] Reel generation failed: \(error)")
                 await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
