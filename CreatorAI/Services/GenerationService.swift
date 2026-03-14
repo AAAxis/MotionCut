@@ -350,13 +350,25 @@ actor GenerationService {
     }
 
     func getGenerationStatus(id: String) async throws -> GenerationStatusResponse {
-        // Try new ads endpoint first, fall back to old generate endpoint
-        let adStatus: AdStatusResponse = try await api.get("/api/ads/status/\(id)")
-        return GenerationStatusResponse(
-            status: adStatus.status == "succeeded" ? "completed" : adStatus.status,
-            resultVideoUrl: adStatus.output?.download != nil ? "\(api.baseURL)\(adStatus.output!.download!)" : nil,
-            error: adStatus.error
-        )
+        // Try ads endpoint first
+        if let adStatus = try? await api.get("/api/ads/status/\(id)") as AdStatusResponse,
+           adStatus.status != "not_found" {
+            return GenerationStatusResponse(
+                status: adStatus.status == "succeeded" ? "completed" : adStatus.status,
+                resultVideoUrl: adStatus.output?.download != nil ? "\(api.baseURL)\(adStatus.output!.download!)" : nil,
+                error: adStatus.error
+            )
+        }
+        // Fall back to create endpoint
+        if let createStatus = try? await api.get("/api/create/status/\(id)") as AICreateStatus {
+            return GenerationStatusResponse(
+                status: createStatus.status == "succeeded" ? "completed" : createStatus.status,
+                resultVideoUrl: createStatus.outputUrl,
+                error: createStatus.error
+            )
+        }
+        // Fall back to old generate endpoint
+        return try await api.get("/api/generate/\(id)")
     }
 
     /// Check status of a local export from on-device storage (no network call).
