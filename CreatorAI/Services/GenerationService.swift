@@ -122,6 +122,7 @@ struct GenerateOptions: Encodable {
     let scenes: Int
     let duration: Int
     let style: String
+    var language: String = "en"
 }
 
 struct GenerateResponse: Codable {
@@ -315,12 +316,12 @@ actor GenerationService {
         return response.preview
     }
 
-    func generateAd(url: String, prompt: String, userId: String, scenes: Int, duration: Int, style: String) async throws -> String {
+    func generateAd(url: String, prompt: String, userId: String, scenes: Int, duration: Int, style: String, language: String = "en") async throws -> String {
         let request = GenerateRequest(
             url: url,
             prompt: prompt,
             userId: userId,
-            options: GenerateOptions(scenes: scenes, duration: duration, style: style)
+            options: GenerateOptions(scenes: scenes, duration: duration, style: style, language: language)
         )
         let response: GenerateResponse = try await api.post("/api/generate", body: request)
         return response.generationId

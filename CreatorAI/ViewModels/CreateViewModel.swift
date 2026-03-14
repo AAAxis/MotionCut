@@ -123,6 +123,7 @@ class CreateViewModel: ObservableObject {
     @Published var adURL = ""
     @Published var adPrompt = ""
     @Published var adStyle = "modern"
+    @Published var adLanguage = "en"
     @Published var adDuration = 30
     @Published var adScenes = 5
     @Published var adPreview: PagePreview?
@@ -304,7 +305,8 @@ class CreateViewModel: ObservableObject {
                 userId: "demo-user",
                 scenes: adScenes,
                 duration: adDuration,
-                style: adStyle
+                style: adStyle,
+                language: adLanguage
             )
             // Credits deducted server-side
             isLoading = false

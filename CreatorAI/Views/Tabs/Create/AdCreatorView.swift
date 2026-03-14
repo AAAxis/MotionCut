@@ -1,5 +1,10 @@
 import SwiftUI
 
+private func flagEmoji(_ code: String) -> String {
+    let base: UInt32 = 127397
+    return code.uppercased().unicodeScalars.compactMap { UnicodeScalar(base + $0.value) }.map { String($0) }.joined()
+}
+
 struct AdCreatorView: View {
     @ObservedObject var viewModel: CreateViewModel
     @EnvironmentObject var appState: AppState
@@ -67,31 +72,31 @@ struct AdCreatorView: View {
                 }
                 .padding(.bottom, 20)
 
-            // Style
-            SectionLabel("STYLE")
+            // Voiceover Language
+            SectionLabel("VOICEOVER LANGUAGE")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
-                    ForEach(AD_STYLES) { s in
+                    ForEach(LANGUAGES) { lang in
                         Button {
-                            viewModel.adStyle = s.id
+                            viewModel.adLanguage = lang.id
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: s.icon)
-                                    .font(.system(size: 16))
-                                Text(s.label)
+                                Text(flagEmoji(lang.flag))
+                                    .font(.system(size: 18))
+                                Text(lang.label)
                                     .font(.system(size: 14, weight: .semibold))
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)
                             .background(
                                 RoundedRectangle(cornerRadius: 12)
-                                    .fill(viewModel.adStyle == s.id ? theme.primary.opacity(0.08) : theme.surfaceElevated)
+                                    .fill(viewModel.adLanguage == lang.id ? theme.primary.opacity(0.08) : theme.surfaceElevated)
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12)
-                                            .stroke(viewModel.adStyle == s.id ? theme.primary : theme.border, lineWidth: 1.5)
+                                            .stroke(viewModel.adLanguage == lang.id ? theme.primary : theme.border, lineWidth: 1.5)
                                     )
                             )
-                            .foregroundColor(viewModel.adStyle == s.id ? theme.primary : theme.text)
+                            .foregroundColor(viewModel.adLanguage == lang.id ? theme.primary : theme.text)
                         }
                     }
                 }
