@@ -9,34 +9,11 @@ struct CreateView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Header with credits
-                HStack {
-                    Text("Create")
-                        .font(.system(size: 29, weight: .semibold))
-                        .foregroundColor(theme.text)
-
-                    Spacer()
-
-                    // Credits badge
-                    Button {
-                        viewModel.showBuyCredits = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.circle.fill")
-                                .font(.system(size: 16))
-                            Text("\(appState.credits)")
-                                .font(.system(size: 15, weight: .bold, design: .rounded))
-                        }
-                        .foregroundColor(appState.credits > 0 ? theme.primary : .red)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(appState.credits > 0 ? theme.primary.opacity(0.12) : Color.red.opacity(0.12))
-                        )
-                    }
-                }
-                .padding(.bottom, 8)
+                // Header
+                Text("Create")
+                    .font(.system(size: 29, weight: .semibold))
+                    .foregroundColor(theme.text)
+                    .padding(.bottom, 8)
 
                 // Mode Toggle
                 HStack(spacing: 0) {
@@ -91,10 +68,17 @@ struct CreateView: View {
         .sheet(isPresented: $viewModel.showBuyCredits) {
             PaywallView()
                 .onPurchaseCompleted { customerInfo in
+                    let productId = customerInfo.nonSubscriptions
+                        .sorted { $0.purchaseDate > $1.purchaseDate }
+                        .first?.productIdentifier
                     Task {
-                        await PurchaseService.shared.handlePurchaseCompleted(appState: appState)
+                        if let productId {
+                            await PurchaseService.shared.handlePurchaseCompleted(productId: productId, appState: appState)
+                        } else {
+                            await PurchaseService.shared.handlePurchaseCompleted(appState: appState)
+                        }
+                        viewModel.showBuyCredits = false
                     }
-                    viewModel.showBuyCredits = false
                 }
         }
         .onAppear {

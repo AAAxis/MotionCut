@@ -11,6 +11,7 @@ class PurchaseService: ObservableObject {
 
     @Published var isReady = false
     @Published var isPurchasing = false
+    @Published var packages: [Package] = []
 
     private var isConfigured = false
 
@@ -44,7 +45,15 @@ class PurchaseService: ObservableObject {
         print("[PurchaseService] Configured for user: \(userId)")
     }
 
-    /// Called after RevenueCat PaywallView completes a purchase — sync credits to server
+    /// Called after a purchase with the product ID — sync credits to server
+    func handlePurchaseCompleted(productId: String, appState: AppState) async {
+        let creditsToAdd = creditAmounts[productId] ?? 100
+        await addCreditsOnServer(userId: appState.userId ?? "", productId: productId, amount: creditsToAdd)
+        print("[IAP] Purchase: \(productId) → +\(creditsToAdd) credits")
+        await appState.fetchCredits()
+    }
+
+    /// Fallback: called from PaywallView which only gives CustomerInfo — infer product from most recent transaction
     func handlePurchaseCompleted(appState: AppState) async {
         do {
             let customerInfo = try await Purchases.shared.customerInfo()
@@ -52,18 +61,41 @@ class PurchaseService: ObservableObject {
                 .sorted { $0.purchaseDate > $1.purchaseDate }
 
             if let latest = recent.first {
-                let productId = latest.productIdentifier
-                let creditsToAdd = creditAmounts[productId] ?? 100
-
-                await addCreditsOnServer(userId: appState.userId ?? "", productId: productId, amount: creditsToAdd)
-                appState.addCredits(creditsToAdd)
-                print("[IAP] PaywallView purchase: \(productId) → +\(creditsToAdd) credits")
+                await handlePurchaseCompleted(productId: latest.productIdentifier, appState: appState)
+            } else {
+                await appState.fetchCredits()
             }
         } catch {
             print("[IAP] Failed to get customer info after purchase: \(error)")
+            await appState.fetchCredits()
         }
+    }
 
-        await appState.fetchCredits()
+    func loadOfferings() async {
+        do {
+            let offerings = try await Purchases.shared.offerings()
+            if let current = offerings.current {
+                packages = current.availablePackages
+            }
+        } catch {
+            print("[PurchaseService] Failed to load offerings: \(error)")
+        }
+    }
+
+    /// Purchase a package and sync credits to server. Returns true on success.
+    func purchase(_ package: Package, appState: AppState) async -> Bool {
+        isPurchasing = true
+        defer { isPurchasing = false }
+        do {
+            let result = try await Purchases.shared.purchase(package: package)
+            guard !result.userCancelled else { return false }
+            let productId = package.storeProduct.productIdentifier
+            await handlePurchaseCompleted(productId: productId, appState: appState)
+            return true
+        } catch {
+            print("[PurchaseService] Purchase failed: \(error)")
+            return false
+        }
     }
 
     func restorePurchases() async -> Bool {
