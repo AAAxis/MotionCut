@@ -148,6 +148,16 @@ struct LibraryView: View {
         .onAppear {
             Task { await viewModel.loadGenerations() }
         }
+        .task {
+            // Auto-refresh processing items every 5s
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                let hasProcessing = viewModel.generations.contains { $0.status == .processing }
+                if hasProcessing {
+                    await viewModel.refreshProcessingGenerations()
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .switchToLibraryTab)) { _ in
             Task { await viewModel.loadGenerations() }
         }

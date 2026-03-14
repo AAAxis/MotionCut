@@ -19,11 +19,87 @@ class LibraryViewModel: ObservableObject {
         isLoading = true
         do {
             generations = try await GenerationService.shared.fetchGenerations(userId: userId)
+            await refreshProcessingGenerations()
             await loadThumbnails()
         } catch {
             print("Failed to load generations: \(error)")
         }
         isLoading = false
+    }
+    
+    /// Check any stuck "processing" generations against the server and update
+    func refreshProcessingGenerations() async {
+        let processing = generations.filter { $0.status == .processing }
+        guard !processing.isEmpty else { return }
+        
+        let baseURL = await GenerationService.shared.getBaseURL()
+        
+        for gen in processing {
+            // Try ads endpoint
+            if let updated = await checkAdStatus(id: gen.id, baseURL: baseURL) {
+                if let idx = generations.firstIndex(where: { $0.id == gen.id }) {
+                    generations[idx].status = updated.status
+                    generations[idx].resultVideoUrl = updated.videoUrl
+                    await GenerationService.shared.updateGeneration(
+                        id: gen.id,
+                        status: updated.status,
+                        remoteVideoUrl: updated.videoUrl
+                    )
+                }
+                continue
+            }
+            // Try create endpoint
+            if let updated = await checkCreateStatus(id: gen.id, baseURL: baseURL) {
+                if let idx = generations.firstIndex(where: { $0.id == gen.id }) {
+                    generations[idx].status = updated.status
+                    generations[idx].resultVideoUrl = updated.videoUrl
+                    await GenerationService.shared.updateGeneration(
+                        id: gen.id,
+                        status: updated.status,
+                        remoteVideoUrl: updated.videoUrl
+                    )
+                }
+            }
+        }
+    }
+    
+    private struct StatusResult {
+        let status: GenerationStatus
+        let videoUrl: String?
+    }
+    
+    private func checkAdStatus(id: String, baseURL: String) async -> StatusResult? {
+        guard let url = URL(string: "\(baseURL)/api/ads/status/\(id)") else { return nil }
+        guard let (data, resp) = try? await URLSession.shared.data(from: url),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let status = json["status"] as? String else { return nil }
+        
+        if status == "succeeded" {
+            let output = json["output"] as? [String: Any]
+            let download = output?["download"] as? String
+            let videoUrl = download != nil ? "\(baseURL)\(download!)" : nil
+            return StatusResult(status: .completed, videoUrl: videoUrl)
+        } else if status == "failed" {
+            return StatusResult(status: .failed, videoUrl: nil)
+        }
+        return nil
+    }
+    
+    private func checkCreateStatus(id: String, baseURL: String) async -> StatusResult? {
+        guard let url = URL(string: "\(baseURL)/api/create/status/\(id)") else { return nil }
+        guard let (data, resp) = try? await URLSession.shared.data(from: url),
+              let http = resp as? HTTPURLResponse, http.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let status = json["status"] as? String else { return nil }
+        
+        if status == "succeeded" {
+            let videoUrl = json["outputUrl"] as? String
+            return StatusResult(status: .completed, videoUrl: videoUrl)
+        } else if status == "failed" {
+            return StatusResult(status: .failed, videoUrl: nil)
+        }
+        return nil
     }
 
     func deleteGeneration(_ generation: Generation) async {
