@@ -23,8 +23,7 @@ object AuthService {
     private const val SUPABASE_URL = "https://uhpuqiptxcjluwsetoev.supabase.co"
     private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVocHVxaXB0eGNqbHV3c2V0b2V2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTE4OTYsImV4cCI6MjA3MjY2Nzg5Nn0.D_t-dyA4Z192kAU97Oi79At_IDT_5putusXrR0bQ6z8"
 
-    // TODO: Fill in from Google Cloud Console (OAuth 2.0 Web Client ID) — same project used for iOS Google Sign-In
-    private const val GOOGLE_WEB_CLIENT_ID = "REPLACE_WITH_WEB_CLIENT_ID.apps.googleusercontent.com"
+    private const val GOOGLE_WEB_CLIENT_ID = "482450515497-ttkljbevgt6bg4sqil9hklk1vol1d0fn.apps.googleusercontent.com"
 
     private val supabase by lazy {
         createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY) {
