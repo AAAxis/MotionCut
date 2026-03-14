@@ -57,6 +57,32 @@ class PurchaseService: ObservableObject {
         }
     }
 
+    /// Called after RevenueCat PaywallView completes a purchase
+    func handlePurchaseCompleted(appState: AppState) async {
+        // Check latest customer info for non-subscription (consumable) transactions
+        do {
+            let customerInfo = try await Purchases.shared.customerInfo()
+            // For consumables, RevenueCat tracks them in nonSubscriptionTransactions
+            let recent = customerInfo.nonSubscriptions
+                .sorted { $0.purchaseDate > $1.purchaseDate }
+
+            if let latest = recent.first {
+                let productId = latest.productIdentifier
+                let creditsToAdd = creditAmounts[productId] ?? 100
+
+                await addCreditsOnServer(userId: appState.userId ?? "", productId: productId, amount: creditsToAdd)
+                appState.addCredits(creditsToAdd)
+
+                print("[IAP] PaywallView purchase: \(productId) → +\(creditsToAdd) credits")
+            }
+        } catch {
+            print("[IAP] Failed to get customer info after purchase: \(error)")
+        }
+
+        // Refresh credits from server
+        await appState.fetchCredits()
+    }
+
     // MARK: - Private
 
     private func addCreditsOnServer(userId: String, productId: String, amount: Int) async {

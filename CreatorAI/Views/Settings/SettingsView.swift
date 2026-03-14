@@ -1,5 +1,6 @@
 import SwiftUI
 import StoreKit
+import RevenueCatUI
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -231,7 +232,13 @@ struct SettingsView: View {
         .background(theme.background.ignoresSafeArea(.all))
         .navigationBarHidden(true)
         .sheet(isPresented: $showBuyCredits) {
-            BuyCreditsView()
+            PaywallView()
+                .onPurchaseCompleted { customerInfo in
+                    Task {
+                        await PurchaseService.shared.handlePurchaseCompleted(appState: appState)
+                    }
+                    showBuyCredits = false
+                }
         }
         .alert("Sign in failed", isPresented: .init(get: { authError != nil }, set: { if !$0 { authError = nil } })) {
             Button("OK", role: .cancel) { authError = nil }

@@ -1,4 +1,5 @@
 import SwiftUI
+import RevenueCatUI
 
 struct CreateView: View {
     @EnvironmentObject var appState: AppState
@@ -88,7 +89,13 @@ struct CreateView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .sheet(isPresented: $viewModel.showBuyCredits) {
-            BuyCreditsView()
+            PaywallView()
+                .onPurchaseCompleted { customerInfo in
+                    Task {
+                        await PurchaseService.shared.handlePurchaseCompleted(appState: appState)
+                    }
+                    viewModel.showBuyCredits = false
+                }
         }
         .onAppear {
             Task { await appState.fetchCredits() }
