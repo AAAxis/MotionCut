@@ -1,13 +1,18 @@
 import Foundation
 import RevenueCat
+import RevenueCatUI
 
-/// Credits-based IAP via RevenueCat (consumable, no subscriptions)
+private let revenueCatAPIKey = "appl_KcCxWUWBcwWpTDjeoWMSASAXwLY"
+
+/// Credits-based IAP via RevenueCat (consumable products)
 @MainActor
 class PurchaseService: ObservableObject {
     static let shared = PurchaseService()
 
-    @Published var packages: [Package] = []
+    @Published var isReady = false
     @Published var isPurchasing = false
+
+    private var isConfigured = false
 
     private let creditAmounts: [String: Int] = [
         "credits_100": 100,
@@ -15,54 +20,34 @@ class PurchaseService: ObservableObject {
         "credits_300": 300,
     ]
 
+    private init() {}
+
     func configure(userId: String) {
-        Purchases.configure(withAPIKey: "appl_XYZyourRevenueCatKey", appUserID: userId)
+        guard !isConfigured else {
+            Purchases.shared.logIn(userId) { info, _, error in
+                Task { @MainActor in
+                    self.isReady = true
+                }
+            }
+            return
+        }
+
+        Purchases.configure(
+            with: .builder(withAPIKey: revenueCatAPIKey)
+                .with(appUserID: userId)
+                .build()
+        )
+        isConfigured = true
+        isReady = true
+
         Purchases.shared.delegate = PurchaseDelegateHandler.shared
-        Task { await loadOfferings() }
+        print("[PurchaseService] Configured for user: \(userId)")
     }
 
-    func loadOfferings() async {
-        do {
-            let offerings = try await Purchases.shared.offerings()
-            if let current = offerings.current {
-                packages = current.availablePackages
-            }
-        } catch {
-            print("[IAP] Failed to load offerings: \(error)")
-        }
-    }
-
-    func purchase(_ package: Package, appState: AppState) async -> Bool {
-        isPurchasing = true
-        defer { isPurchasing = false }
-
-        do {
-            let result = try await Purchases.shared.purchase(package: package)
-
-            if !result.userCancelled {
-                let productId = package.storeProduct.productIdentifier
-                let creditsToAdd = creditAmounts[productId] ?? 100
-
-                // Add credits on server
-                await addCreditsOnServer(userId: appState.userId ?? "", productId: productId, amount: creditsToAdd)
-                appState.addCredits(creditsToAdd)
-
-                print("[IAP] Purchase successful: \(productId) → +\(creditsToAdd) credits")
-                return true
-            }
-            return false
-        } catch {
-            print("[IAP] Purchase failed: \(error)")
-            return false
-        }
-    }
-
-    /// Called after RevenueCat PaywallView completes a purchase
+    /// Called after RevenueCat PaywallView completes a purchase — sync credits to server
     func handlePurchaseCompleted(appState: AppState) async {
-        // Check latest customer info for non-subscription (consumable) transactions
         do {
             let customerInfo = try await Purchases.shared.customerInfo()
-            // For consumables, RevenueCat tracks them in nonSubscriptionTransactions
             let recent = customerInfo.nonSubscriptions
                 .sorted { $0.purchaseDate > $1.purchaseDate }
 
@@ -72,15 +57,23 @@ class PurchaseService: ObservableObject {
 
                 await addCreditsOnServer(userId: appState.userId ?? "", productId: productId, amount: creditsToAdd)
                 appState.addCredits(creditsToAdd)
-
                 print("[IAP] PaywallView purchase: \(productId) → +\(creditsToAdd) credits")
             }
         } catch {
             print("[IAP] Failed to get customer info after purchase: \(error)")
         }
 
-        // Refresh credits from server
         await appState.fetchCredits()
+    }
+
+    func restorePurchases() async -> Bool {
+        do {
+            let _ = try await Purchases.shared.restorePurchases()
+            return true
+        } catch {
+            print("[PurchaseService] Restore failed: \(error)")
+            return false
+        }
     }
 
     // MARK: - Private
@@ -106,12 +99,12 @@ class PurchaseService: ObservableObject {
     }
 }
 
-// MARK: - RevenueCat Delegate
+// MARK: - Delegate
 
 class PurchaseDelegateHandler: NSObject, PurchasesDelegate {
     static let shared = PurchaseDelegateHandler()
 
-    func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
-        // No subscription logic — credits are server-side
+    nonisolated func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
+        // Credits are server-side, no subscription tracking needed
     }
 }
