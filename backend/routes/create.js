@@ -11,9 +11,16 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuid } = require('uuid');
+const { fal } = require('@fal-ai/client');
 
 const { calculateCost } = require('../config/credits');
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
+const FAL_KEY = process.env.FAL_KEY || '';
+
+// Configure fal.ai as fallback
+if (FAL_KEY) fal.config({ credentials: FAL_KEY });
+
+const FAL_VIDEO_MODEL = 'fal-ai/pixverse/v4/text-to-video';
 
 // Model configs — input format per model
 const MODEL_CONFIGS = {
@@ -110,31 +117,58 @@ router.post('/generate', async (req, res) => {
 
     console.log(`[Create] ${mode}: model=${selectedModel}, prompt="${prompt.substring(0, 60)}", hasImage=${hasImage}`);
 
-    // Create prediction
-    const prediction = await replicateAPI('POST', `/v1/models/${selectedModel}/predictions`, { input });
+    // Create prediction — try Replicate first, fal.ai as fallback on 429
+    let prediction = await replicateAPI('POST', `/v1/models/${selectedModel}/predictions`, { input });
 
-    if (prediction.error || prediction.detail) {
+    let usedFal = false;
+    if ((prediction.detail && prediction.detail.includes('throttled')) || prediction.status === 429) {
+      console.log(`[Create] Replicate rate-limited, trying fal.ai fallback...`);
+      if (FAL_KEY && mode === 'text-to-video') {
+        try {
+          const falResult = await fal.subscribe(FAL_VIDEO_MODEL, {
+            input: { prompt, duration: String(duration || 5), aspect_ratio: '9:16', quality: 'high' },
+            logs: false, pollInterval: 5000,
+          });
+          const videoUrl = falResult.data?.video?.url;
+          if (videoUrl) {
+            usedFal = true;
+            prediction = { id: `fal-${uuid().substring(0,8)}`, status: 'succeeded', output: videoUrl };
+            console.log(`[Create] fal.ai fallback succeeded: ${videoUrl.substring(0, 60)}`);
+          }
+        } catch (falErr) {
+          console.error('[Create] fal.ai fallback failed:', falErr.message);
+        }
+      }
+      if (!usedFal) {
+        return res.status(429).json({ error: 'Rate limited. Please try again in a minute.' });
+      }
+    }
+
+    if (!usedFal && (prediction.error || prediction.detail)) {
       console.error('[Create] Replicate error:', prediction.error || prediction.detail);
       return res.status(500).json({ error: prediction.error || prediction.detail || 'Replicate API error' });
     }
 
-    console.log(`[Create] Prediction started: ${prediction.id}, status=${prediction.status}`);
+    console.log(`[Create] ${usedFal ? 'fal.ai' : 'Replicate'} prediction: ${prediction.id}, status=${prediction.status}`);
 
     // Save to DB
     const id = uuid();
+    const finalModel = usedFal ? FAL_VIDEO_MODEL : selectedModel;
+    const outputUrl = usedFal ? prediction.output : null;
     await req.db.query(
-      `INSERT INTO ai_generations (id, user_id, model_id, mode, prompt, image_url, duration, replicate_id, status, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-      [id, userId || null, selectedModel, mode, prompt, imageUrl || null, duration, prediction.id, prediction.status || 'starting']
+      `INSERT INTO ai_generations (id, user_id, model_id, mode, prompt, image_url, duration, replicate_id, status, output_url, created_at${usedFal ? ', completed_at' : ''})
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW()${usedFal ? ', NOW()' : ''})`,
+      [id, userId || null, finalModel, mode, prompt, imageUrl || null, duration, prediction.id, prediction.status || 'starting', outputUrl]
     );
 
     res.json({
       success: true,
       id,
       mode,
-      model: selectedModel,
+      model: finalModel,
       status: prediction.status || 'starting',
       replicateId: prediction.id,
+      outputUrl,
     });
   } catch (err) {
     console.error('[Create] Error:', err.message);

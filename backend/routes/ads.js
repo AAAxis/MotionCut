@@ -1,286 +1,275 @@
 /**
- * /api/ads — AI Ad Maker
+ * /api/ads — AI Ad Maker v4
  *
- * Flow: URL → scrape → script → TTS → video → lip-sync
- * 
- * POST /api/ads/generate  → Start full pipeline
- * GET  /api/ads/status/:id → Poll progress
+ * Dual-provider: fal.ai (video via PixVerse v4) + Replicate (TTS)
+ * Flow: URL → scrape → script → TTS (Replicate) → 3 video clips (fal.ai parallel) → ffmpeg merge
  */
 const express = require('express');
 const router = express.Router();
 const { v4: uuid } = require('uuid');
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { fal } = require('@fal-ai/client');
 
 const { OPERATION_CREDITS } = require('../config/credits');
 const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || '';
+const FAL_KEY = process.env.FAL_KEY || '';
 
-// Models
+fal.config({ credentials: FAL_KEY });
+
 const TTS_MODEL = 'minimax/speech-02-hd';
-const VIDEO_MODEL = 'bytedance/seedance-1-lite';
-const LIPSYNC_MODEL = 'devxpy/cog-wav2lip';
+const FAL_VIDEO_MODEL = 'fal-ai/pixverse/v4/text-to-video';
 
-async function replicateAPI(method, path, body) {
-  const res = await fetch(`https://api.replicate.com${path}`, {
-    method,
-    headers: {
-      'Authorization': `Bearer ${REPLICATE_TOKEN}`,
-      'Content-Type': 'application/json',
-      'Prefer': 'wait=120',
-    },
-    body: body ? JSON.stringify(body) : undefined,
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+// ===== Replicate (TTS only) =====
+async function replicatePost(urlPath, body, retries = 5) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`https://api.replicate.com${urlPath}`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${REPLICATE_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.status === 429 && attempt < retries) {
+      const wait = Math.max(10, parseInt(res.headers.get('retry-after') || '10'));
+      console.log(`[Ad] Rate limited, waiting ${wait}s (attempt ${attempt + 1})...`);
+      await delay(wait * 1000);
+      continue;
+    }
+    return data;
+  }
+}
+
+async function replicateGet(urlPath) {
+  const res = await fetch(`https://api.replicate.com${urlPath}`, {
+    headers: { 'Authorization': `Bearer ${REPLICATE_TOKEN}` },
   });
   return res.json();
 }
 
-async function replicateAsync(method, path, body) {
-  const res = await fetch(`https://api.replicate.com${path}`, {
-    method,
-    headers: {
-      'Authorization': `Bearer ${REPLICATE_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  return res.json();
-}
-
-async function pollPrediction(id, maxWait = 300000) {
+async function pollReplicate(id, maxWait = 120000) {
   const start = Date.now();
   while (Date.now() - start < maxWait) {
-    const pred = await replicateAsync('GET', `/v1/predictions/${id}`);
+    const pred = await replicateGet(`/v1/predictions/${id}`);
     if (pred.status === 'succeeded') return pred;
-    if (pred.status === 'failed' || pred.status === 'canceled') {
-      throw new Error(`Prediction ${id} ${pred.status}: ${pred.error || 'unknown'}`);
-    }
-    await new Promise(r => setTimeout(r, 5000));
+    if (pred.status === 'failed' || pred.status === 'canceled')
+      throw new Error(`Replicate ${id} ${pred.status}: ${pred.error || 'unknown'}`);
+    await delay(3000);
   }
-  throw new Error(`Prediction ${id} timed out`);
+  throw new Error(`Replicate TTS timed out`);
 }
 
+// ===== fal.ai (video) =====
+async function falGenerate(prompt) {
+  const result = await fal.subscribe(FAL_VIDEO_MODEL, {
+    input: { prompt, duration: '5', aspect_ratio: '9:16', quality: 'high' },
+    logs: false,
+    pollInterval: 5000,
+  });
+  const data = result.data;
+  if (data?.video?.url) return data.video.url;
+  throw new Error(`fal.ai no video URL: ${JSON.stringify(data).substring(0, 200)}`);
+}
+
+// ===== Script generation =====
 async function generateScript(productInfo, userNotes) {
-  const prompt = `You are a viral short-form video scriptwriter. Write a 15-second sales script for a product ad.
-
-Product info:
-- Title: ${productInfo.title || 'Unknown'}
-- Description: ${productInfo.description || 'N/A'}
-- Domain: ${productInfo.domain || 'N/A'}
-${userNotes ? `\nUser notes: ${userNotes}` : ''}
-
-Requirements:
-- 15 seconds max when spoken (about 40-50 words)
-- Hook in first 2 seconds
-- Highlight 1-2 key benefits
-- End with clear CTA
-- Conversational, energetic tone
-- Written as spoken words only — NO stage directions, NO parenthetical notes like (music plays), NO sound effects
-
-Script:`;
-
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_KEY}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Authorization': `Bearer ${OPENROUTER_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: 'google/gemini-2.0-flash-001',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 200,
+      messages: [{ role: 'user', content: `You are a viral short-form video scriptwriter. Write a 15-second voiceover script for a product ad video.
+
+Product: ${productInfo.title || 'Unknown product'}
+Description: ${productInfo.description || 'N/A'}
+Website: ${productInfo.domain || 'N/A'}
+${userNotes ? `Creative direction: ${userNotes}` : ''}
+
+STRICT RULES:
+- Output ONLY the spoken words. Nothing else.
+- Do NOT include stage directions, notes, labels, or formatting
+- Do NOT repeat or paraphrase the creative direction
+- About 40-50 words (15 seconds when spoken)
+- Start with a punchy hook
+- Mention 1-2 key benefits naturally
+- End with a clear call to action
+- Conversational, energetic, authentic tone` }],
+      max_tokens: 150,
     }),
   });
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || 'Check out this amazing product!';
+  let script = data.choices?.[0]?.message?.content?.trim() || '';
+  return script.replace(/^["']|["']$/g, '').trim() || 'Stay protected online. Get your VPN today.';
 }
 
-async function generateVideoPrompt(productInfo, script) {
-  const prompt = `Generate a short prompt for an AI video model. The video should show a young professional person (mid-20s) looking at camera, speaking naturally with hand gestures, in a well-lit modern setting. They are presenting a product ad. Keep it to 1-2 sentences.
+async function generateVideoPrompts(productInfo, script) {
+  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${OPENROUTER_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'google/gemini-2.0-flash-001',
+      messages: [{ role: 'user', content: `Generate exactly 3 short cinematic video prompts for an AI video model. These 3 clips will be edited together into one product ad.
 
 Product: ${productInfo.title || 'tech product'}
-Script they're reading: "${script}"
+Voiceover: "${script}"
 
-Video prompt:`;
+Each prompt = DIFFERENT visual scene:
+1. HOOK — dramatic, eye-catching opening that grabs attention in 2 seconds
+2. BENEFIT — showing the product value visually (security, speed, freedom)
+3. CTA — confident person or powerful visual ending, call to action energy
 
-  const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'google/gemini-2.0-flash-001',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 100,
+Rules:
+- 1-2 sentences each, very descriptive and cinematic
+- Dark moody lighting, neon accents, cyberpunk/tech aesthetic where appropriate
+- Real people, real settings — no cartoon, no greenscreen
+- Vertical 9:16 framing
+- Each scene must be VISUALLY DIFFERENT (different setting, angle, mood)
+- Output ONLY 3 prompts, numbered 1. 2. 3.` }],
+      max_tokens: 400,
     }),
   });
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || 'A young professional person speaking to camera in a modern office, natural gestures, well-lit, 9:16 vertical';
+  const text = data.choices?.[0]?.message?.content?.trim() || '';
+  const prompts = text.split('\n').map(l => l.replace(/^\d+[\.\)]\s*/, '').trim()).filter(l => l.length > 10);
+  while (prompts.length < 3) prompts.push('A person looking at their phone with a satisfied smile, dramatic lighting, cinematic vertical shot');
+  return prompts.slice(0, 3);
 }
 
-// POST /api/ads/generate
+// ===== File helpers =====
+async function downloadFile(url, filepath) {
+  const res = await fetch(url);
+  fs.writeFileSync(filepath, Buffer.from(await res.arrayBuffer()));
+}
+
+function mergeVideosWithAudio(videoPaths, audioPath, outputPath) {
+  const concatFile = outputPath + '.txt';
+  fs.writeFileSync(concatFile, videoPaths.map(p => `file '${p}'`).join('\n'));
+  const audioDur = execSync(`ffprobe -v error -show_entries format=duration -of csv=p=0 "${audioPath}"`).toString().trim();
+  execSync(`ffmpeg -y -f concat -safe 0 -i "${concatFile}" -i "${audioPath}" -c:v libx264 -c:a aac -map 0:v:0 -map 1:a:0 -t ${audioDur} -shortest -pix_fmt yuv420p -movflags +faststart "${outputPath}" 2>/dev/null`);
+  fs.unlinkSync(concatFile);
+}
+
+// ===== Routes =====
 router.post('/generate', async (req, res) => {
   try {
     const { url, notes, userId } = req.body;
+    if (!url) return res.status(400).json({ error: 'url is required' });
 
-    if (!url) {
-      return res.status(400).json({ error: 'url is required' });
-    }
-
-    // Credit check
     const adCost = OPERATION_CREDITS['ad-maker'];
     if (userId) {
       const userCheck = await req.db.query('SELECT credits, is_subscribed FROM users WHERE external_id = $1', [userId]);
       const user = userCheck.rows[0];
       if (user && !user.is_subscribed) {
-        if (user.credits < adCost) {
-          return res.status(402).json({ error: 'Insufficient credits', credits: user.credits, cost: adCost });
-        }
+        if (user.credits < adCost) return res.status(402).json({ error: 'Insufficient credits', credits: user.credits, cost: adCost });
         await req.db.query('UPDATE users SET credits = credits - $1 WHERE external_id = $2', [adCost, userId]);
-        console.log(`[AdMaker] Deducted ${adCost} credits from ${userId}`);
       }
     }
 
     const id = uuid();
-
-    // Save initial record
     await req.db.query(
-      `INSERT INTO ad_generations (id, user_id, product_url, notes, status, step, created_at)
-       VALUES ($1, $2, $3, $4, 'processing', 'scraping', NOW())`,
+      `INSERT INTO ad_generations (id, user_id, product_url, notes, status, step, created_at) VALUES ($1, $2, $3, $4, 'processing', 'scraping', NOW())`,
       [id, userId || null, url, notes || null]
     );
-
-    // Return immediately, process in background
     res.json({ success: true, id, status: 'processing', step: 'scraping' });
 
-    // ===== Background pipeline =====
+    // Background pipeline
     (async () => {
+      const tmpDir = path.join(os.tmpdir(), `ad-${id}`);
+      fs.mkdirSync(tmpDir, { recursive: true });
+
       try {
-        // Step 1: Scrape product page
-        console.log(`[AdMaker] ${id} Step 1: Scraping ${url}`);
-        const scrapeRes = await fetch(`http://127.0.0.1:3001/api/generate/preview`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url }),
+        // Step 1: Scrape
+        console.log(`[Ad] ${id} Scraping...`);
+        const scrapeRes = await fetch('http://127.0.0.1:3001/api/generate/preview', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }),
         });
-        const scrapeData = await scrapeRes.json();
-        const productInfo = scrapeData.preview || {};
+        const productInfo = (await scrapeRes.json()).preview || {};
+        await req.db.query(`UPDATE ad_generations SET step='script', product_info=$1 WHERE id=$2`, [JSON.stringify(productInfo), id]);
 
-        await req.db.query(
-          `UPDATE ad_generations SET step = 'script', product_info = $1 WHERE id = $2`,
-          [JSON.stringify(productInfo), id]
-        );
-
-        // Step 2: Generate sales script
-        console.log(`[AdMaker] ${id} Step 2: Generating script`);
+        // Step 2: Script + video prompts in parallel
+        console.log(`[Ad] ${id} Script + prompts...`);
         const script = await generateScript(productInfo, notes);
-        console.log(`[AdMaker] ${id} Script: "${script.substring(0, 80)}..."`);
+        console.log(`[Ad] ${id} Script: "${script}"`);
+        const videoPrompts = await generateVideoPrompts(productInfo, script);
+        console.log(`[Ad] ${id} Prompts:`, videoPrompts);
+        await req.db.query(`UPDATE ad_generations SET step='tts', script=$1 WHERE id=$2`, [script, id]);
 
-        await req.db.query(
-          `UPDATE ad_generations SET step = 'tts', script = $1 WHERE id = $2`,
-          [script, id]
-        );
+        // Step 3: TTS (Replicate) + 3 video clips (fal.ai) ALL IN PARALLEL
+        console.log(`[Ad] ${id} TTS + 3 videos in parallel...`);
+        const [ttsResult, ...videoUrls] = await Promise.all([
+          // TTS on Replicate
+          (async () => {
+            const ttsPred = await replicatePost(`/v1/models/${TTS_MODEL}/predictions`, {
+              input: { text: script, voice_id: 'Wise_Woman', speed: 1.1, emotion: 'happy' },
+            });
+            if (!ttsPred.id) throw new Error(`TTS failed: ${JSON.stringify(ttsPred).substring(0, 200)}`);
+            const result = await pollReplicate(ttsPred.id, 60000);
+            return result.output;
+          })(),
+          // 3 videos on fal.ai (parallel, no rate limits!)
+          falGenerate(videoPrompts[0]),
+          falGenerate(videoPrompts[1]),
+          falGenerate(videoPrompts[2]),
+        ]);
 
-        // Step 3: TTS voiceover
-        console.log(`[AdMaker] ${id} Step 3: Generating voiceover`);
-        const ttsPred = await replicateAsync('POST', `/v1/models/${TTS_MODEL}/predictions`, {
-          input: {
-            text: script,
-            voice_id: 'Wise_Woman',
-            speed: 1.1,
-            emotion: 'happy',
-          },
-        });
+        const audioUrl = ttsResult;
+        console.log(`[Ad] ${id} TTS done + 3 clips done`);
+        await req.db.query(`UPDATE ad_generations SET step='merging', audio_url=$1, video_url=$2 WHERE id=$3`, [audioUrl, videoUrls[0], id]);
 
-        if (ttsPred.error) throw new Error(`TTS error: ${ttsPred.error}`);
-        const ttsResult = await pollPrediction(ttsPred.id, 60000);
-        const audioUrl = ttsResult.output;
-        console.log(`[AdMaker] ${id} TTS done: ${audioUrl}`);
+        // Step 4: Download + merge
+        console.log(`[Ad] ${id} Downloading & merging...`);
+        const audioPath = path.join(tmpDir, 'audio.wav');
+        await downloadFile(audioUrl, audioPath);
 
-        await req.db.query(
-          `UPDATE ad_generations SET step = 'video', audio_url = $1 WHERE id = $2`,
-          [audioUrl, id]
-        );
+        const videoPaths = [];
+        for (let i = 0; i < videoUrls.length; i++) {
+          const vp = path.join(tmpDir, `clip${i}.mp4`);
+          await downloadFile(videoUrls[i], vp);
+          videoPaths.push(vp);
+        }
 
-        // Step 4: Generate AI person video
-        console.log(`[AdMaker] ${id} Step 4: Generating video`);
-        const videoPrompt = await generateVideoPrompt(productInfo, script);
-        console.log(`[AdMaker] ${id} Video prompt: "${videoPrompt.substring(0, 80)}..."`);
+        const outputPath = path.join(tmpDir, 'final.mp4');
+        mergeVideosWithAudio(videoPaths, audioPath, outputPath);
 
-        const videoPred = await replicateAsync('POST', `/v1/models/${VIDEO_MODEL}/predictions`, {
-          input: {
-            prompt: videoPrompt,
-            duration: 5,
-            aspect_ratio: '9:16',
-          },
-        });
+        const publicPath = `/tmp/ad-${id}-final.mp4`;
+        fs.copyFileSync(outputPath, publicPath);
 
-        console.log(`[AdMaker] ${id} Video prediction response:`, JSON.stringify(videoPred).substring(0, 200));
-        if (!videoPred.id) throw new Error(`Video API error: ${JSON.stringify(videoPred).substring(0, 200)}`);
-        if (videoPred.error || videoPred.detail) throw new Error(`Video error: ${videoPred.error || videoPred.detail}`);
-        const videoResult = await pollPrediction(videoPred.id, 300000);
-        const videoUrl = videoResult.output;
-        console.log(`[AdMaker] ${id} Video done: ${videoUrl}`);
+        const outputData = JSON.stringify({ clips: videoUrls, audio: audioUrl, download: `/api/ads/download/${id}` });
+        await req.db.query(`UPDATE ad_generations SET status='succeeded', step='done', output_url=$1, completed_at=NOW() WHERE id=$2`, [outputData, id]);
+        console.log(`[Ad] ${id} ✅ DONE`);
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch(e) {}
 
-        await req.db.query(
-          `UPDATE ad_generations SET step = 'lipsync', video_url = $1 WHERE id = $2`,
-          [videoUrl, id]
-        );
-
-        // Step 5: Lip-sync audio onto video
-        console.log(`[AdMaker] ${id} Step 5: Lip-syncing`);
-        const lipsyncPred = await replicateAsync('POST', `/v1/models/${LIPSYNC_MODEL}/predictions`, {
-          input: {
-            face: videoUrl,
-            audio: audioUrl,
-            smooth: true,
-          },
-        });
-
-        if (lipsyncPred.error) throw new Error(`Lipsync error: ${lipsyncPred.error}`);
-        const lipsyncResult = await pollPrediction(lipsyncPred.id, 120000);
-        const finalUrl = lipsyncResult.output;
-        console.log(`[AdMaker] ${id} ✅ Done: ${finalUrl}`);
-
-        await req.db.query(
-          `UPDATE ad_generations SET status = 'succeeded', step = 'done', output_url = $1, completed_at = NOW() WHERE id = $2`,
-          [finalUrl, id]
-        );
       } catch (err) {
-        console.error(`[AdMaker] ${id} FAILED at step:`, err.message);
-        await req.db.query(
-          `UPDATE ad_generations SET status = 'failed', error = $1, completed_at = NOW() WHERE id = $2`,
-          [err.message, id]
-        );
+        console.error(`[Ad] ${id} FAILED:`, err.message);
+        await req.db.query(`UPDATE ad_generations SET status='failed', error=$1, completed_at=NOW() WHERE id=$2`, [err.message, id]);
+        try { fs.rmSync(tmpDir, { recursive: true }); } catch(e) {}
       }
     })();
   } catch (err) {
-    console.error('[AdMaker] Error:', err.message);
+    console.error('[Ad] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/ads/status/:id
 router.get('/status/:id', async (req, res) => {
   try {
     const result = await req.db.query('SELECT * FROM ad_generations WHERE id = $1', [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ error: 'Not found' });
-
     const gen = result.rows[0];
-    res.json({
-      id: gen.id,
-      status: gen.status,
-      step: gen.step,
-      script: gen.script,
-      audioUrl: gen.audio_url,
-      videoUrl: gen.video_url,
-      outputUrl: gen.output_url,
-      error: gen.error,
-      productInfo: gen.product_info ? JSON.parse(gen.product_info) : null,
-      createdAt: gen.created_at,
-      completedAt: gen.completed_at,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+    let output = null;
+    try { output = gen.output_url ? JSON.parse(gen.output_url) : null; } catch(e) { output = gen.output_url; }
+    res.json({ id: gen.id, status: gen.status, step: gen.step, script: gen.script, audioUrl: gen.audio_url, videoUrl: gen.video_url, output, error: gen.error, createdAt: gen.created_at, completedAt: gen.completed_at });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+router.get('/download/:id', (req, res) => {
+  const filepath = `/tmp/ad-${req.params.id}-final.mp4`;
+  if (fs.existsSync(filepath)) { res.setHeader('Content-Type', 'video/mp4'); res.sendFile(filepath); }
+  else res.status(404).json({ error: 'Video not found or expired' });
 });
 
 module.exports = router;
