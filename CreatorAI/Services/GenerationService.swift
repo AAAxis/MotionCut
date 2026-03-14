@@ -129,6 +129,33 @@ struct GenerateResponse: Codable {
     let generationId: String
 }
 
+struct AdGenerateRequest: Encodable {
+    let url: String
+    let notes: String
+    let userId: String
+    let language: String
+}
+
+struct AdGenerateResponse: Codable {
+    let id: String
+    let status: String
+}
+
+struct AdOutputInfo: Codable {
+    let download: String?
+    let clips: [String]?
+    let audio: String?
+}
+
+struct AdStatusResponse: Codable {
+    let id: String
+    let status: String
+    let step: String?
+    let script: String?
+    let output: AdOutputInfo?
+    let error: String?
+}
+
 struct GenerationStatusResponse: Codable {
     let status: String
     let resultVideoUrl: String?
@@ -317,18 +344,19 @@ actor GenerationService {
     }
 
     func generateAd(url: String, prompt: String, userId: String, scenes: Int, duration: Int, style: String, language: String = "en") async throws -> String {
-        let request = GenerateRequest(
-            url: url,
-            prompt: prompt,
-            userId: userId,
-            options: GenerateOptions(scenes: scenes, duration: duration, style: style, language: language)
-        )
-        let response: GenerateResponse = try await api.post("/api/generate", body: request)
-        return response.generationId
+        let adRequest = AdGenerateRequest(url: url, notes: prompt, userId: userId, language: language)
+        let response: AdGenerateResponse = try await api.post("/api/ads/generate", body: adRequest)
+        return response.id
     }
 
     func getGenerationStatus(id: String) async throws -> GenerationStatusResponse {
-        return try await api.get("/api/generate/\(id)")
+        // Try new ads endpoint first, fall back to old generate endpoint
+        let adStatus: AdStatusResponse = try await api.get("/api/ads/status/\(id)")
+        return GenerationStatusResponse(
+            status: adStatus.status == "succeeded" ? "completed" : adStatus.status,
+            resultVideoUrl: adStatus.output?.download != nil ? "\(api.baseURL)\(adStatus.output!.download!)" : nil,
+            error: adStatus.error
+        )
     }
 
     /// Check status of a local export from on-device storage (no network call).
