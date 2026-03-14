@@ -346,9 +346,44 @@ class CreateViewModel: ObservableObject {
                 style: adStyle,
                 language: adLanguage
             )
-            // Credits deducted server-side
+            // Save to local library
+            let adTitle = adPreview?.title ?? "Video Ad"
+            let generation = Generation(
+                id: generationId,
+                videoName: adTitle,
+                videoUri: nil,
+                resultVideoUrl: nil,
+                status: .processing,
+                createdAt: Date(),
+                userId: appState.userId ?? "demo-user"
+            )
+            await GenerationService.shared.saveGeneration(generation)
+            
+            // Poll in background and update when done
+            Task.detached(priority: .background) {
+                let deadline = Date().addingTimeInterval(300)
+                while Date() < deadline {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    do {
+                        let status = try await GenerationService.shared.getGenerationStatus(id: generationId)
+                        if status.status == "completed", let videoUrl = status.resultVideoUrl {
+                            await GenerationService.shared.updateGeneration(
+                                id: generationId,
+                                status: .completed,
+                                remoteVideoUrl: videoUrl
+                            )
+                            return
+                        } else if status.status == "failed" {
+                            await GenerationService.shared.updateGeneration(id: generationId, status: .failed)
+                            return
+                        }
+                    } catch { }
+                }
+                await GenerationService.shared.updateGeneration(id: generationId, status: .failed)
+            }
+            
             isLoading = false
-            return (id: generationId, title: adPreview?.title ?? "Video Ad")
+            return (id: generationId, title: adTitle)
         } catch let error as APIError {
             if case .httpError(402) = error {
                 showBuyCredits = true
