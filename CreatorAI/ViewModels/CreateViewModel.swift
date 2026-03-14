@@ -314,7 +314,7 @@ class CreateViewModel: ObservableObject {
             let generationId = try await GenerationService.shared.generateAd(
                 url: adURL.trimmingCharacters(in: .whitespaces),
                 prompt: adPrompt.trimmingCharacters(in: .whitespaces),
-                userId: "demo-user",
+                userId: appState.userId ?? "demo-user",
                 scenes: adScenes,
                 duration: adDuration,
                 style: adStyle,
