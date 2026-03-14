@@ -138,6 +138,20 @@ class CreateViewModel: ObservableObject {
         case input, preview, generating
     }
 
+    // Credits per second per model (must match server config/credits.js)
+    var reelCreditCost: Int {
+        let perSecond: Int
+        switch reelInfluencerId {
+        case "bytedance/seedance-1-lite": perSecond = 1
+        case "bytedance/seedance-1-pro": perSecond = 2
+        case "kwaivgi/kling-v2.1": perSecond = 3
+        case "kwaivgi/kling-v1.6-standard": perSecond = 2
+        case "minimax/video-01": perSecond = 5
+        default: perSecond = 1
+        }
+        return perSecond * reelDuration
+    }
+
     // MARK: - Credit Check
 
     func checkCredits(_ appState: AppState) -> Bool {
@@ -270,6 +284,12 @@ class CreateViewModel: ObservableObject {
                         remoteVideoUrl: makeAbsoluteReelURL(downloadUrl)
                     )
                 }
+            } catch let error as APIError {
+                if case .httpError(402) = error {
+                    await MainActor.run { showBuyCredits = true }
+                }
+                print("[CreateViewModel] Reel generation failed: \(error)")
+                await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
             } catch {
                 print("[CreateViewModel] Reel generation failed: \(error)")
                 await GenerationService.shared.updateGeneration(id: generation.id, status: .failed)
@@ -323,6 +343,15 @@ class CreateViewModel: ObservableObject {
             // Credits deducted server-side
             isLoading = false
             return (id: generationId, title: adPreview?.title ?? "Video Ad")
+        } catch let error as APIError {
+            if case .httpError(402) = error {
+                showBuyCredits = true
+            } else {
+                errorMessage = error.localizedDescription
+            }
+            adStep = .preview
+            isLoading = false
+            return nil
         } catch {
             errorMessage = error.localizedDescription
             adStep = .preview

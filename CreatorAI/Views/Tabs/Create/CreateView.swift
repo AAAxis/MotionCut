@@ -9,11 +9,31 @@ struct CreateView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Header
-                Text("Create")
-                    .font(.system(size: 29, weight: .semibold))
-                    .foregroundColor(theme.text)
-                    .padding(.bottom, 8)
+                // Header + Credits
+                HStack {
+                    Text("Create")
+                        .font(.system(size: 29, weight: .semibold))
+                        .foregroundColor(theme.text)
+                    Spacer()
+                    Button {
+                        viewModel.showBuyCredits = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 12))
+                            Text("\(appState.credits >= 0 ? "\(appState.credits)" : "∞")")
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        }
+                        .foregroundColor(theme.primary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            Capsule()
+                                .fill(theme.primary.opacity(0.12))
+                        )
+                    }
+                }
+                .padding(.bottom, 8)
 
                 // Mode Toggle
                 HStack(spacing: 0) {

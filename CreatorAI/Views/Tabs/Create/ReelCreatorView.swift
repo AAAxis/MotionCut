@@ -80,7 +80,7 @@ struct ReelCreatorView: View {
                     } else {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 20))
-                        Text("Generate Reel")
+                        Text("Generate Reel · \(viewModel.reelCreditCost) credits")
                             .font(.system(size: 17, weight: .semibold))
                     }
                 }
