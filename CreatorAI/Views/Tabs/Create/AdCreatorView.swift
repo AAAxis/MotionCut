@@ -187,7 +187,7 @@ struct AdCreatorView: View {
                     } else {
                         Image(systemName: "wand.and.stars")
                             .font(.system(size: 20))
-                        Text("Generate Video Ad · 10 credits")
+                        Text("Generate Video Ad · 30 credits")
                             .font(.system(size: 17, weight: .semibold))
                     }
                 }
