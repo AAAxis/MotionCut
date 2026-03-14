@@ -64,7 +64,9 @@ async function replicateAPI(method, path, body) {
     },
     body: body ? JSON.stringify(body) : undefined,
   });
-  return res.json();
+  const data = await res.json();
+  data._httpStatus = res.status;
+  return data;
 }
 
 // POST /api/create/generate
@@ -130,8 +132,12 @@ router.post('/generate', async (req, res) => {
     let prediction = await replicateAPI('POST', `/v1/models/${selectedModel}/predictions`, { input });
 
     let usedFal = false;
-    if ((prediction.detail && prediction.detail.includes('throttled')) || prediction.status === 429) {
-      console.log(`[Create] Replicate rate-limited, trying fal.ai fallback...`);
+    const isRateLimited = prediction._httpStatus === 429 ||
+      (prediction.detail && (prediction.detail.includes('throttled') || prediction.detail.includes('rate limit'))) ||
+      (prediction.error && typeof prediction.error === 'string' && prediction.error.includes('throttled'));
+    const isError = prediction._httpStatus >= 400 || prediction.error || prediction.detail;
+    if (isRateLimited || (isError && mode === 'text-to-video')) {
+      console.log(`[Create] Replicate ${isRateLimited ? 'rate-limited' : 'error'}, trying fal.ai fallback...`);
       if (FAL_KEY && mode === 'text-to-video') {
         try {
           const falResult = await fal.subscribe(FAL_VIDEO_MODEL, {
