@@ -33,8 +33,7 @@ import kotlin.coroutines.resume
  */
 object PurchaseService {
 
-    // TODO: Replace with your Android RevenueCat API key from the dashboard (goog_...)
-    private const val REVENUECAT_API_KEY = "goog_REPLACE_WITH_YOUR_KEY"
+    private const val REVENUECAT_API_KEY = "goog_IxIDNZhbWfBYOKZtrLcMrXjQidL"
 
     private val creditAmounts = mapOf(
         "credits_100" to 100,
