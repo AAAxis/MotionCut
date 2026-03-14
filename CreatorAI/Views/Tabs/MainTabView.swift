@@ -51,7 +51,9 @@ struct MainTabView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToGenerationStatus)) { notification in
-            if let result = notification.object as? (id: String, title: String, isLocalExport: Bool) {
+            if let result = notification.object as? (id: String, title: String, isLocalExport: Bool, isReel: Bool) {
+                navigationPath.append(Route.generationStatus(id: result.id, title: result.title, isLocalExport: result.isLocalExport))
+            } else if let result = notification.object as? (id: String, title: String, isLocalExport: Bool) {
                 navigationPath.append(Route.generationStatus(id: result.id, title: result.title, isLocalExport: result.isLocalExport))
             } else if let result = notification.object as? (id: String, title: String) {
                 navigationPath.append(Route.generationStatus(id: result.id, title: result.title))

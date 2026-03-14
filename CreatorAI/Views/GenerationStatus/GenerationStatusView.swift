@@ -101,6 +101,18 @@ struct GenerationStatusView: View {
             }
             .padding(.horizontal, 24)
 
+            // Skip button (continues in background)
+            if viewModel.status == "processing" {
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Continue in background")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(theme.textSecondary)
+                        .padding(.top, 24)
+                }
+            }
+
             // Error
             if viewModel.status == "failed", let error = viewModel.error {
                 Text(error)

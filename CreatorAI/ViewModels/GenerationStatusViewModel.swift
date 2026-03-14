@@ -17,11 +17,25 @@ class GenerationStatusViewModel: ObservableObject {
     private var pollTimer: Timer?
     private var stepTimers: [Timer] = []
 
+    enum GenerationType {
+        case api      // Ad Maker
+        case reel     // AI Influencer / Reel
+        case export   // Local export
+    }
+
     static let apiSteps: [(key: String, label: String, icon: String)] = [
         ("scraping", "Analyzing page...", "magnifyingglass"),
         ("scripting", "Writing script...", "pencil.line"),
         ("footage", "Finding footage...", "film"),
         ("rendering", "Rendering video...", "film.stack"),
+        ("done", "Done!", "checkmark.circle.fill"),
+    ]
+
+    static let reelSteps: [(key: String, label: String, icon: String)] = [
+        ("starting", "Starting AI model...", "cpu"),
+        ("processing", "Generating video...", "wand.and.stars"),
+        ("enhancing", "Enhancing quality...", "sparkles"),
+        ("audio", "Mixing audio...", "waveform"),
         ("done", "Done!", "checkmark.circle.fill"),
     ]
 
@@ -32,14 +46,21 @@ class GenerationStatusViewModel: ObservableObject {
         ("done", "Done!", "checkmark.circle.fill"),
     ]
 
+    let generationType: GenerationType
+
     var steps: [(key: String, label: String, icon: String)] {
-        isLocalExport ? Self.exportSteps : Self.apiSteps
+        switch generationType {
+        case .api: return Self.apiSteps
+        case .reel: return Self.reelSteps
+        case .export: return Self.exportSteps
+        }
     }
 
-    init(generationId: String, title: String, isLocalExport: Bool = false) {
+    init(generationId: String, title: String, isLocalExport: Bool = false, generationType: GenerationType? = nil) {
         self.generationId = generationId
         self.title = title
         self.isLocalExport = isLocalExport
+        self.generationType = generationType ?? (isLocalExport ? .export : .api)
     }
 
     func startPolling() {
@@ -63,8 +84,8 @@ class GenerationStatusViewModel: ObservableObject {
 
     private func checkStatus() async {
         let response: GenerationStatusResponse
-        if isLocalExport {
-            response = await GenerationService.shared.getLocalGenerationStatus(id: generationId)
+        if isLocalExport || generationType == .reel {
+            response = GenerationService.shared.getLocalGenerationStatus(id: generationId)
         } else {
             do {
                 response = try await GenerationService.shared.getGenerationStatus(id: generationId)

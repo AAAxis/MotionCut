@@ -193,6 +193,12 @@ class CreateViewModel: ObservableObject {
 
         resetReelForm()
 
+        // Navigate to progress screen
+        NotificationCenter.default.post(
+            name: .navigateToGenerationStatus,
+            object: (id: generation.id, title: topic, isLocalExport: false, isReel: true)
+        )
+
         Task.detached(priority: .background) {
             do {
                 print("[Generate] influencerId=\(influencerId), hasSlash=\(influencerId.contains("/")), avatarImageURL=\(String(describing: avatarImageURL)), referenceVideoURL=\(String(describing: referenceVideoURL))")
