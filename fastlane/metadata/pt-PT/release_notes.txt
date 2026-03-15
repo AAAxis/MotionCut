@@ -1,0 +1,4 @@
+• Novo Estúdio de Avatares IA — apresentadores digitais hiperrealistas
+• Renderização de vídeo até 3× mais rápida
+• Melhorias no Beat Sync com deteção automática de tempo
+• Correções de erros e melhorias de desempenho

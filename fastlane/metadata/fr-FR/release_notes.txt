@@ -1,0 +1,4 @@
+• Nouveau Studio Avatar IA — présentateurs numériques hyperréalistes
+• Rendu vidéo jusqu'à 3× plus rapide
+• Améliorations Beat Sync avec détection automatique du tempo
+• Corrections de bugs et améliorations des performances

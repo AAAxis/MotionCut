@@ -1,0 +1,4 @@
+• Studio Avatar AI baru — presenter digital hiper-realistis
+• Rendering video hingga 3× lebih cepat
+• Peningkatan Beat Sync dengan deteksi tempo otomatis
+• Perbaikan bug dan peningkatan performa

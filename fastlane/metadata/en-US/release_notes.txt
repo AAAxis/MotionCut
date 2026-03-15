@@ -1,0 +1,4 @@
+• New AI Avatar Studio — build a hyper-realistic digital presenter
+• Faster video rendering (up to 3×)
+• Beat Sync improvements with auto tempo detection
+• Bug fixes and performance improvements

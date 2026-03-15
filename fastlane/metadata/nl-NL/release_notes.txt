@@ -1,0 +1,4 @@
+• Nieuw AI Avatar Studio — hyperrealistische digitale presentatoren
+• Videoverwerking tot 3× sneller
+• Beat Sync verbeteringen met automatische tempodetectie
+• Bugfixes en prestatieverbeteringen

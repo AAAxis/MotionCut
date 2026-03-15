@@ -1,0 +1,4 @@
+• AI Avatar Studio mới — người dẫn kỹ thuật số siêu thực
+• Kết xuất video nhanh hơn tới 3×
+• Cải tiến Beat Sync với phát hiện nhịp độ tự động
+• Sửa lỗi và cải thiện hiệu suất
