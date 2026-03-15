@@ -74,7 +74,4 @@ dependencies {
     implementation(libs.play.services.auth)
     implementation(libs.coroutines.android)
     implementation(libs.appcompat)
-    implementation(libs.credentials)
-    implementation(libs.credentials.play.services)
-    implementation(libs.googleid)
 }
