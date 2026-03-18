@@ -1,0 +1,77 @@
+[01:38:14]: [33mGet started using a Gemfile for fastlane https://docs.fastlane.tools/getting-started/ios/setup/#use-a-gemfile[0m
+[01:38:14]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+DEBUG [2026-03-15 01:38:14.64]: Checking if there are any plugins that should be loaded...
+[33mSuccessfully loaded Appfile at path '/Users/admin/Documents/GitHub/video-editor/fastlane/Appfile'[0m
+- [36mapp_identifier[0m: '[32mcom.theholylabs.creator[0m'
+- [36mapple_id[0m: '[32mpolskoydm@outlook.com[0m'
+- [36mteam_id[0m: '[32mLJPXXSNQZ9[0m'
+- [36mitc_team_id[0m: '[32m121334693[0m'
+-------
+INFO [2026-03-15 01:38:15.30]: [32m------------------------------[0m
+INFO [2026-03-15 01:38:15.30]: [32m--- Step: default_platform ---[0m
+INFO [2026-03-15 01:38:15.30]: [32m------------------------------[0m
+INFO [2026-03-15 01:38:15.30]: [32mDriving the lane 'ios list_localizations' 🚀[0m
+INFO [2026-03-15 01:38:15.30]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:38:15.30]: [32m--- Step: app_store_connect_api_key ---[0m
+INFO [2026-03-15 01:38:15.30]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:38:18.28]: --- Version: 2.0 (PREPARE_FOR_SUBMISSION) ---
+INFO [2026-03-15 01:38:19.98]: --- Existing Localizations ---
+WARN [2026-03-15 01:38:19.98]: [33m[33mLane Context:[0m
+INFO [2026-03-15 01:38:19.98]: {:DEFAULT_PLATFORM=>:ios, :PLATFORM_NAME=>:ios, :LANE_NAME=>"ios list_localizations"}
+ERROR [2026-03-15 01:38:19.98]: [31mError in your Fastfile at line 21[0m
+ERROR [2026-03-15 01:38:19.98]: [31m```[0m
+ERROR [2026-03-15 01:38:19.98]: [31m    19:	      UI.message("--- Existing Localizations ---")[0m
+ERROR [2026-03-15 01:38:19.98]: [31m    20:	      locs.each do |loc|[0m
+ERROR [2026-03-15 01:38:19.98]: [31m => 21:	        UI.message("- #{loc.locale}: Name='#{loc.name}'")[0m
+ERROR [2026-03-15 01:38:19.98]: [31m    22:	      end[0m
+ERROR [2026-03-15 01:38:19.98]: [31m    23:	      UI.message("------------------------------")[0m
+ERROR [2026-03-15 01:38:19.98]: [31m```[0m
+ERROR [2026-03-15 01:38:19.98]: [31mCalled from Fastfile at line 20[0m
+ERROR [2026-03-15 01:38:19.98]: [31m```[0m
+ERROR [2026-03-15 01:38:19.99]: [31m    18:	      locs = version.get_app_store_version_localizations[0m
+ERROR [2026-03-15 01:38:19.99]: [31m    19:	      UI.message("--- Existing Localizations ---")[0m
+ERROR [2026-03-15 01:38:19.99]: [31m => 20:	      locs.each do |loc|[0m
+ERROR [2026-03-15 01:38:19.99]: [31m    21:	        UI.message("- #{loc.locale}: Name='#{loc.name}'")[0m
+ERROR [2026-03-15 01:38:19.99]: [31m    22:	      end[0m
+ERROR [2026-03-15 01:38:19.99]: [31m```[0m
+INFO [2026-03-15 01:38:19.99]: [32mSuccessfully generated documentation at path '/Users/admin/Documents/GitHub/video-editor/fastlane/README.md'[0m
+
++---------------------------------------------+
+|              [32mfastlane summary[0m               |
++------+------------------------+-------------+
+| Step | Action                 | Time (in s) |
++------+------------------------+-------------+
+| 1    | default_platform       | 0           |
+| 2    | app_store_connect_api  | 0           |
+|      | _key                   |             |
++------+------------------------+-------------+
+
+ERROR [2026-03-15 01:38:20.00]: [31mfastlane finished with errors[0m
+
+Looking for related GitHub issues on fastlane/fastlane...
+Search query: undefined method `name' for Spaceship::ConnectAPI::AppStoreVersionLocalization
+
+URL: https://api.github.com/search/issues?q=undefined%20method%20%60name%27%20for%20Spaceship%3A%3AConnectAPI%3A%3AAppStoreVersionLocalization+repo:fastlane/fastlane
+ERROR [2026-03-15 01:38:20.15]: [31mError finding relevant GitHub issues: SSL_connect returned=1 errno=0 peeraddr=20.217.135.0:443 state=error: certificate verify failed (unable to get certificate CRL)[0m
+WARN [2026-03-15 01:38:20.15]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+Fastfile:21:in `block (3 levels) in parsing_binding': \e[31m[!] undefined method `name' for #<Spaceship::ConnectAPI::AppStoreVersionLocalization:0x000000010cbbcda0 @id="03c30142-dfb6-475e-ad77-d7633a21cd6b", @description=nil, @locale="ar-SA", @keywords=nil, @marketing_url=nil, @promotional_text=nil, @support_url=nil, @whats_new=nil>\e[0m (NoMethodError)
+	from Fastfile:20:in `each'
+	from Fastfile:20:in `block (2 levels) in parsing_binding'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane.rb:41:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:49:in `block in execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:45:in `chdir'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:45:in `execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane_manager.rb:46:in `cruise_lane'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/command_line_handler.rb:34:in `handle'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:110:in `block (2 levels) in run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:187:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:157:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/runner.rb:444:in `run_active_command'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/fastlane_runner.rb:124:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/delegates.rb:18:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:363:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:43:in `start'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/cli_tools_distributor.rb:132:in `take_off'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/bin/fastlane:23:in `<top (required)>'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `load'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `<main>'

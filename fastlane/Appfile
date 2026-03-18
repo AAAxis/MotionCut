@@ -1,0 +1,4 @@
+app_identifier("com.theholylabs.creator")
+apple_id("polskoydm@outlook.com")
+team_id("LJPXXSNQZ9")
+itc_team_id("121334693") # Looking at the previous Fastfile or similar if available, otherwise deliver will find it

@@ -1,0 +1,4 @@
+• Nové AI Avatar Studio — hyperrealistickí digitální moderátoři
+• Renderování videa až 3× rychlejší
+• Vylepšení Beat Sync s automatickým rozpoznáváním tempa
+• Opravy chyb a vylepšení výkonu

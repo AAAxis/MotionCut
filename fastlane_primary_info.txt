@@ -1,0 +1,36 @@
+[01:40:30]: [33mGet started using a Gemfile for fastlane https://docs.fastlane.tools/getting-started/ios/setup/#use-a-gemfile[0m
+[01:40:30]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+DEBUG [2026-03-15 01:40:31.66]: Checking if there are any plugins that should be loaded...
+[33mSuccessfully loaded Appfile at path '/Users/admin/Documents/GitHub/video-editor/fastlane/Appfile'[0m
+- [36mapp_identifier[0m: '[32mcom.theholylabs.creator[0m'
+- [36mapple_id[0m: '[32mpolskoydm@outlook.com[0m'
+- [36mteam_id[0m: '[32mLJPXXSNQZ9[0m'
+- [36mitc_team_id[0m: '[32m121334693[0m'
+-------
+INFO [2026-03-15 01:40:32.19]: [32m------------------------------[0m
+INFO [2026-03-15 01:40:32.19]: [32m--- Step: default_platform ---[0m
+INFO [2026-03-15 01:40:32.19]: [32m------------------------------[0m
+INFO [2026-03-15 01:40:32.19]: [32mDriving the lane 'ios list_primary' 🚀[0m
+INFO [2026-03-15 01:40:32.19]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:40:32.19]: [32m--- Step: app_store_connect_api_key ---[0m
+INFO [2026-03-15 01:40:32.19]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:40:33.71]: --- App Name: Creator AI ---
+INFO [2026-03-15 01:40:33.71]: --- Primary Locale: en-CA ---
+INFO [2026-03-15 01:40:35.22]: --- Edit Version: 2.0 ---
+INFO [2026-03-15 01:40:36.35]: --- Localizations for 2.0: ar-SA, en-CA, de-DE ---
+INFO [2026-03-15 01:40:37.87]: --- Live Version: 1.1 ---
+INFO [2026-03-15 01:40:39.06]: --- Localizations for Live: en-CA ---
+INFO [2026-03-15 01:40:39.07]: [32mSuccessfully generated documentation at path '/Users/admin/Documents/GitHub/video-editor/fastlane/README.md'[0m
+
++---------------------------------------------+
+|              [32mfastlane summary[0m               |
++------+------------------------+-------------+
+| Step | Action                 | Time (in s) |
++------+------------------------+-------------+
+| 1    | default_platform       | 0           |
+| 2    | app_store_connect_api  | 0           |
+|      | _key                   |             |
++------+------------------------+-------------+
+
+INFO [2026-03-15 01:40:39.08]: [32mfastlane.tools finished successfully 🎉[0m
+WARN [2026-03-15 01:40:39.08]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m

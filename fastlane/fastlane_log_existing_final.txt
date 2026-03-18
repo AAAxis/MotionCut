@@ -1,0 +1,158 @@
+[01:42:36]: [33mGet started using a Gemfile for fastlane https://docs.fastlane.tools/getting-started/ios/setup/#use-a-gemfile[0m
+[01:42:36]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+DEBUG [2026-03-15 01:42:37.02]: Checking if there are any plugins that should be loaded...
+[33mSuccessfully loaded Appfile at path '/Users/admin/Documents/GitHub/video-editor/fastlane/Appfile'[0m
+- [36mapp_identifier[0m: '[32mcom.theholylabs.creator[0m'
+- [36mapple_id[0m: '[32mpolskoydm@outlook.com[0m'
+- [36mteam_id[0m: '[32mLJPXXSNQZ9[0m'
+- [36mitc_team_id[0m: '[32m121334693[0m'
+-------
+INFO [2026-03-15 01:42:37.44]: [32m------------------------------[0m
+INFO [2026-03-15 01:42:37.44]: [32m--- Step: default_platform ---[0m
+INFO [2026-03-15 01:42:37.44]: [32m------------------------------[0m
+INFO [2026-03-15 01:42:37.44]: [32mDriving the lane 'ios upload_aso' 🚀[0m
+INFO [2026-03-15 01:42:37.44]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:42:37.44]: [32m--- Step: app_store_connect_api_key ---[0m
+INFO [2026-03-15 01:42:37.44]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:42:37.47]: [32m---------------------[0m
+INFO [2026-03-15 01:42:37.47]: [32m--- Step: deliver ---[0m
+INFO [2026-03-15 01:42:37.47]: [32m---------------------[0m
+INFO [2026-03-15 01:42:37.47]: Creating authorization token for App Store Connect API
+
++----------------------------------------------------------------+
+|                    [32mdeliver 2.232.2 Summary[0m                     |
++--------------------------------------+-------------------------+
+| api_key                              | ********                |
+| skip_binary_upload                   | true                    |
+| skip_app_version_update              | false                   |
+| force                                | true                    |
+| overwrite_screenshots                | true                    |
+| screenshots_path                     | ./fastlane/screenshots  |
+| metadata_path                        | ./fastlane/metadata     |
+| precheck_include_in_app_purchases    | false                   |
+| ignore_language_directory_validatio  | true                    |
+| n                                    |                         |
+| username                             | polskoydm@outlook.com   |
+| app_identifier                       | com.theholylabs.creator |
+| platform                             | ios                     |
+| edit_live                            | false                   |
+| use_live_version                     | false                   |
+| skip_screenshots                     | false                   |
+| skip_metadata                        | false                   |
+| screenshot_processing_timeout        | 3600                    |
+| sync_screenshots                     | false                   |
+| submit_for_review                    | false                   |
+| verify_only                          | false                   |
+| reject_if_possible                   | false                   |
+| version_check_wait_retry_limit       | 7                       |
+| phased_release                       | false                   |
+| reset_ratings                        | false                   |
+| team_id                              | 121334693               |
+| dev_portal_team_id                   | LJPXXSNQZ9              |
+| run_precheck_before_submit           | true                    |
+| precheck_default_rule_level          | warn                    |
++--------------------------------------+-------------------------+
+
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/ar-SA/description.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/ar-SA/keywords.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/ar-SA/release_notes.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/ar-SA/support_url.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/ar-SA/promotional_text.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/ar-SA/subtitle.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/ar-SA/privacy_url.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/de-DE/description.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/de-DE/keywords.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/de-DE/release_notes.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/de-DE/support_url.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/de-DE/promotional_text.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/de-DE/subtitle.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/de-DE/privacy_url.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/en-CA/description.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/en-CA/keywords.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/en-CA/release_notes.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/en-CA/support_url.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/en-CA/promotional_text.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/en-CA/subtitle.txt'...
+INFO [2026-03-15 01:42:38.84]: Loading './fastlane/metadata/en-CA/privacy_url.txt'...
+WARN [2026-03-15 01:42:47.03]: [33mWill begin uploading metadata for '2.0' on App Store Connect[0m
+WARN [2026-03-15 01:42:47.03]: [33mRelease type will not be set because neither `automatic_release` nor `auto_release_date` were provided. Please explicitly set one of these options if you need a release type set[0m
+INFO [2026-03-15 01:42:47.03]: Uploading metadata to App Store Connect for version
+INFO [2026-03-15 01:42:51.32]: Uploading metadata to App Store Connect for localized version 'ar-SA'
+INFO [2026-03-15 01:42:51.32]: Uploading metadata to App Store Connect for localized version 'en-CA'
+INFO [2026-03-15 01:42:51.32]: Uploading metadata to App Store Connect for localized version 'de-DE'
+INFO [2026-03-15 01:42:52.51]: Uploading metadata to App Store Connect for localized info 'de-DE'
+INFO [2026-03-15 01:42:52.51]: Uploading metadata to App Store Connect for localized info 'en-CA'
+INFO [2026-03-15 01:42:52.51]: Uploading metadata to App Store Connect for localized info 'ar-SA'
+WARN [2026-03-15 01:42:58.94]: [33mWill begin uploading snapshots for '2.0' on App Store Connect[0m
+INFO [2026-03-15 01:42:58.94]: Starting with the upload of screenshots...
+WARN [2026-03-15 01:43:01.87]: [33mNumber of screenshots not deleted: 0[0m
+INFO [2026-03-15 01:43:01.87]: Successfully deleted all screenshots
+WARN [2026-03-15 01:43:02.91]: [33m[33mLane Context:[0m
+INFO [2026-03-15 01:43:02.91]: {:DEFAULT_PLATFORM=>:ios, :PLATFORM_NAME=>:ios, :LANE_NAME=>"ios upload_aso"}
+ERROR [2026-03-15 01:43:02.91]: [31mCalled from Fastfile at line 12[0m
+ERROR [2026-03-15 01:43:02.91]: [31m```[0m
+ERROR [2026-03-15 01:43:02.91]: [31m    10:	    )[0m
+ERROR [2026-03-15 01:43:02.91]: [31m    11:	[0m
+ERROR [2026-03-15 01:43:02.91]: [31m => 12:	    deliver([0m
+ERROR [2026-03-15 01:43:02.91]: [31m    13:	      api_key: api_key,[0m
+ERROR [2026-03-15 01:43:02.91]: [31m    14:	      skip_binary_upload: true,[0m
+ERROR [2026-03-15 01:43:02.91]: [31m```[0m
+ERROR [2026-03-15 01:43:02.91]: [31mCannot add localization due to app name. - You cannot add this localization because the app name is already being used by another app. If you have trademark rights to this name and would like it released for your use, submit a claim.[0m
+INFO [2026-03-15 01:43:02.91]: [32mSuccessfully generated documentation at path '/Users/admin/Documents/GitHub/video-editor/fastlane/README.md'[0m
+
++---------------------------------------------+
+|              [32mfastlane summary[0m               |
++------+------------------------+-------------+
+| Step | Action                 | Time (in s) |
++------+------------------------+-------------+
+| 1    | default_platform       | 0           |
+| 2    | app_store_connect_api  | 0           |
+|      | _key                   |             |
+| 💥   | [31mdeliver[0m                | 25          |
++------+------------------------+-------------+
+
+ERROR [2026-03-15 01:43:03.04]: [31mfastlane finished with errors[0m
+
+Looking for related GitHub issues on fastlane/fastlane...
+Search query: Cannot add localization due to app name. - You cannot add this localization because the app name is already being used by another app. If you have trademark rights to this name and would like it released for your use, submit a claim.
+
+URL: https://api.github.com/search/issues?q=Cannot%20add%20localization%20due%20to%20app%20name.%20-%20You%20cannot%20add%20this%20localization%20because%20the%20app%20name%20is%20already%20being%20used%20by%20another%20app.%20If%20you%20have%20trademark%20rights%20to%20this%20name%20and%20would%20like%20it%20released%20for%20your%20use%2C%20submit%20a%20claim.+repo:fastlane/fastlane
+ERROR [2026-03-15 01:43:03.28]: [31mError finding relevant GitHub issues: SSL_connect returned=1 errno=0 peeraddr=20.217.135.0:443 state=error: certificate verify failed (unable to get certificate CRL)[0m
+WARN [2026-03-15 01:43:03.29]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+/Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/spaceship/lib/spaceship/connect_api/api_client.rb:223:in `handle_response': \e[31m[!] Cannot add localization due to app name. - You cannot add this localization because the app name is already being used by another app. If you have trademark rights to this name and would like it released for your use, submit a claim.\e[0m (Spaceship::UnexpectedResponse)
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/spaceship/lib/spaceship/connect_api/api_client.rb:125:in `post'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/spaceship/lib/spaceship/connect_api/tunes/tunes.rb:815:in `post_app_store_version_localization'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/3.1.0/forwardable.rb:238:in `post_app_store_version_localization'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/spaceship/lib/spaceship/connect_api/models/app_store_version.rb:158:in `create_app_store_version_localization'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/deliver/lib/deliver/upload_screenshots.rb:47:in `block in upload'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/deliver/lib/deliver/upload_screenshots.rb:46:in `each'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/deliver/lib/deliver/upload_screenshots.rb:46:in `upload'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/deliver/lib/deliver/runner.rb:158:in `upload_metadata'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/deliver/lib/deliver/runner.rb:61:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/actions/upload_to_app_store.rb:22:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:263:in `block (2 levels) in execute_action'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/actions/actions_helper.rb:69:in `execute_action'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:255:in `block in execute_action'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:229:in `chdir'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:229:in `execute_action'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:157:in `trigger_action_by_name'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/fast_file.rb:159:in `method_missing'
+	from Fastfile:12:in `block (2 levels) in parsing_binding'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane.rb:41:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:49:in `block in execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:45:in `chdir'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:45:in `execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane_manager.rb:46:in `cruise_lane'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/command_line_handler.rb:34:in `handle'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:110:in `block (2 levels) in run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:187:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:157:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/runner.rb:444:in `run_active_command'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/fastlane_runner.rb:124:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/delegates.rb:18:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:363:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:43:in `start'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/cli_tools_distributor.rb:132:in `take_off'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/bin/fastlane:23:in `<top (required)>'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `load'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `<main>'

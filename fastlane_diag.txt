@@ -1,0 +1,68 @@
+[01:29:26]: [33mGet started using a Gemfile for fastlane https://docs.fastlane.tools/getting-started/ios/setup/#use-a-gemfile[0m
+[01:29:26]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+DEBUG [2026-03-15 01:29:26.46]: Checking if there are any plugins that should be loaded...
+[33mSuccessfully loaded Appfile at path '/Users/admin/Documents/GitHub/video-editor/fastlane/Appfile'[0m
+- [36mapp_identifier[0m: '[32mcom.theholylabs.creator[0m'
+- [36mapple_id[0m: '[32mpolskoydm@outlook.com[0m'
+- [36mteam_id[0m: '[32mLJPXXSNQZ9[0m'
+- [36mitc_team_id[0m: '[32m121334693[0m'
+-------
+INFO [2026-03-15 01:29:26.72]: [32m------------------------------[0m
+INFO [2026-03-15 01:29:26.72]: [32m--- Step: default_platform ---[0m
+INFO [2026-03-15 01:29:26.72]: [32m------------------------------[0m
+INFO [2026-03-15 01:29:26.72]: [32mDriving the lane 'ios list_localizations' 🚀[0m
+INFO [2026-03-15 01:29:26.72]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:29:26.72]: [32m--- Step: app_store_connect_api_key ---[0m
+INFO [2026-03-15 01:29:26.72]: [32m---------------------------------------[0m
+WARN [2026-03-15 01:29:26.73]: [33m[33mLane Context:[0m
+INFO [2026-03-15 01:29:26.73]: {:DEFAULT_PLATFORM=>:ios, :PLATFORM_NAME=>:ios, :LANE_NAME=>"ios list_localizations"}
+ERROR [2026-03-15 01:29:26.73]: [31mCalled from Fastfile at line 13[0m
+ERROR [2026-03-15 01:29:26.73]: [31m```[0m
+ERROR [2026-03-15 01:29:26.73]: [31m    11:	    [0m
+ERROR [2026-03-15 01:29:26.73]: [31m    12:	    # We use spaceship directly inside the lane[0m
+ERROR [2026-03-15 01:29:26.73]: [31m => 13:	    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create([0m
+ERROR [2026-03-15 01:29:26.73]: [31m    14:	      key_id: "TR5F2GR4AJ",[0m
+ERROR [2026-03-15 01:29:26.73]: [31m    15:	      issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",[0m
+ERROR [2026-03-15 01:29:26.73]: [31m```[0m
+ERROR [2026-03-15 01:29:26.73]: [31mno implicit conversion of nil into String[0m
+INFO [2026-03-15 01:29:26.73]: [32mSuccessfully generated documentation at path '/Users/admin/Documents/GitHub/video-editor/fastlane/README.md'[0m
+
++---------------------------------------------+
+|              [32mfastlane summary[0m               |
++------+------------------------+-------------+
+| Step | Action                 | Time (in s) |
++------+------------------------+-------------+
+| 1    | default_platform       | 0           |
+| 2    | app_store_connect_api  | 0           |
+|      | _key                   |             |
++------+------------------------+-------------+
+
+ERROR [2026-03-15 01:29:26.73]: [31mfastlane finished with errors[0m
+
+Looking for related GitHub issues on fastlane/fastlane...
+Search query: no implicit conversion of nil into String
+
+URL: https://api.github.com/search/issues?q=no%20implicit%20conversion%20of%20nil%20into%20String+repo:fastlane/fastlane
+ERROR [2026-03-15 01:29:26.91]: [31mError finding relevant GitHub issues: SSL_connect returned=1 errno=0 peeraddr=20.217.135.0:443 state=error: certificate verify failed (unable to get certificate CRL)[0m
+WARN [2026-03-15 01:29:27.13]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+/Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/spaceship/lib/spaceship/connect_api/token.rb:62:in `binread': \e[31m[!] no implicit conversion of nil into String\e[0m (TypeError)
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/spaceship/lib/spaceship/connect_api/token.rb:62:in `create'
+	from Fastfile:13:in `block (2 levels) in parsing_binding'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane.rb:41:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:49:in `block in execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:45:in `chdir'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:45:in `execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane_manager.rb:46:in `cruise_lane'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/command_line_handler.rb:34:in `handle'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:110:in `block (2 levels) in run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:187:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:157:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/runner.rb:444:in `run_active_command'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/fastlane_runner.rb:124:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/delegates.rb:18:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:363:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:43:in `start'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/cli_tools_distributor.rb:132:in `take_off'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/bin/fastlane:23:in `<top (required)>'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `load'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `<main>'

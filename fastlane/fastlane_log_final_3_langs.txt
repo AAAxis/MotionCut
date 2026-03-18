@@ -1,0 +1,105 @@
+[01:46:23]: [33mGet started using a Gemfile for fastlane https://docs.fastlane.tools/getting-started/ios/setup/#use-a-gemfile[0m
+[01:46:23]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+DEBUG [2026-03-15 01:46:24.12]: Checking if there are any plugins that should be loaded...
+[33mSuccessfully loaded Appfile at path '/Users/admin/Documents/GitHub/video-editor/fastlane/Appfile'[0m
+- [36mapp_identifier[0m: '[32mcom.theholylabs.creator[0m'
+- [36mapple_id[0m: '[32mpolskoydm@outlook.com[0m'
+- [36mteam_id[0m: '[32mLJPXXSNQZ9[0m'
+- [36mitc_team_id[0m: '[32m121334693[0m'
+-------
+INFO [2026-03-15 01:46:24.46]: [32m------------------------------[0m
+INFO [2026-03-15 01:46:24.46]: [32m--- Step: default_platform ---[0m
+INFO [2026-03-15 01:46:24.46]: [32m------------------------------[0m
+INFO [2026-03-15 01:46:24.46]: [32mDriving the lane 'ios upload_aso_existing' 🚀[0m
+INFO [2026-03-15 01:46:24.46]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:46:24.46]: [32m--- Step: app_store_connect_api_key ---[0m
+INFO [2026-03-15 01:46:24.46]: [32m---------------------------------------[0m
+INFO [2026-03-15 01:46:24.48]: [32m---------------------[0m
+INFO [2026-03-15 01:46:24.48]: [32m--- Step: deliver ---[0m
+INFO [2026-03-15 01:46:24.48]: [32m---------------------[0m
+INFO [2026-03-15 01:46:24.48]: Creating authorization token for App Store Connect API
+
++----------------------------------------------------------------+
+|                    [32mdeliver 2.232.2 Summary[0m                     |
++--------------------------------------+-------------------------+
+| api_key                              | ********                |
+| skip_binary_upload                   | true                    |
+| skip_app_version_update              | false                   |
+| force                                | true                    |
+| overwrite_screenshots                | true                    |
+| screenshots_path                     | ./fastlane/screenshots  |
+| metadata_path                        | ./fastlane/metadata     |
+| precheck_include_in_app_purchases    | false                   |
+| run_precheck_before_submit           | false                   |
+| ignore_language_directory_validatio  | true                    |
+| n                                    |                         |
+| username                             | polskoydm@outlook.com   |
+| app_identifier                       | com.theholylabs.creator |
+| platform                             | ios                     |
+| edit_live                            | false                   |
+| use_live_version                     | false                   |
+| skip_screenshots                     | false                   |
+| skip_metadata                        | false                   |
+| screenshot_processing_timeout        | 3600                    |
+| sync_screenshots                     | false                   |
+| submit_for_review                    | false                   |
+| verify_only                          | false                   |
+| reject_if_possible                   | false                   |
+| version_check_wait_retry_limit       | 7                       |
+| phased_release                       | false                   |
+| reset_ratings                        | false                   |
+| team_id                              | 121334693               |
+| dev_portal_team_id                   | LJPXXSNQZ9              |
+| precheck_default_rule_level          | warn                    |
++--------------------------------------+-------------------------+
+
+INFO [2026-03-15 01:46:26.22]: Loading './fastlane/metadata/ar-SA/description.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/ar-SA/keywords.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/ar-SA/release_notes.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/ar-SA/support_url.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/ar-SA/promotional_text.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/ar-SA/subtitle.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/ar-SA/privacy_url.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/de-DE/description.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/de-DE/keywords.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/de-DE/release_notes.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/de-DE/support_url.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/de-DE/promotional_text.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/de-DE/subtitle.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/de-DE/privacy_url.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/en-CA/description.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/en-CA/keywords.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/en-CA/release_notes.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/en-CA/support_url.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/en-CA/promotional_text.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/en-CA/subtitle.txt'...
+INFO [2026-03-15 01:46:26.23]: Loading './fastlane/metadata/en-CA/privacy_url.txt'...
+INFO [2026-03-15 01:46:31.61]: No changes to localized App Info detected. Skipping upload.
+WARN [2026-03-15 01:46:33.97]: [33mWill begin uploading metadata for '2.0' on App Store Connect[0m
+WARN [2026-03-15 01:46:33.97]: [33mRelease type will not be set because neither `automatic_release` nor `auto_release_date` were provided. Please explicitly set one of these options if you need a release type set[0m
+INFO [2026-03-15 01:46:33.97]: Uploading metadata to App Store Connect for version
+INFO [2026-03-15 01:46:38.26]: Uploading metadata to App Store Connect for localized version 'ar-SA'
+INFO [2026-03-15 01:46:38.26]: Uploading metadata to App Store Connect for localized version 'en-CA'
+INFO [2026-03-15 01:46:38.26]: Uploading metadata to App Store Connect for localized version 'de-DE'
+WARN [2026-03-15 01:46:44.76]: [33mWill begin uploading snapshots for '2.0' on App Store Connect[0m
+INFO [2026-03-15 01:46:44.76]: Starting with the upload of screenshots...
+WARN [2026-03-15 01:46:47.75]: [33mNumber of screenshots not deleted: 0[0m
+INFO [2026-03-15 01:46:47.75]: Successfully deleted all screenshots
+DEBUG [2026-03-15 01:46:47.75]: Uploading jobs are completed
+INFO [2026-03-15 01:46:48.62]: Successfully uploaded all screenshots
+INFO [2026-03-15 01:46:50.04]: [32mSuccessfully uploaded screenshots to App Store Connect[0m
+INFO [2026-03-15 01:46:50.04]: [32mSuccessfully generated documentation at path '/Users/admin/Documents/GitHub/video-editor/fastlane/README.md'[0m
+
++---------------------------------------------+
+|              [32mfastlane summary[0m               |
++------+------------------------+-------------+
+| Step | Action                 | Time (in s) |
++------+------------------------+-------------+
+| 1    | default_platform       | 0           |
+| 2    | app_store_connect_api  | 0           |
+|      | _key                   |             |
+| 3    | deliver                | 25          |
++------+------------------------+-------------+
+
+INFO [2026-03-15 01:46:50.06]: [32mfastlane.tools finished successfully 🎉[0m
+WARN [2026-03-15 01:46:50.06]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m

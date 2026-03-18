@@ -1,0 +1,61 @@
+[02:10:38]: [33mGet started using a Gemfile for fastlane https://docs.fastlane.tools/getting-started/ios/setup/#use-a-gemfile[0m
+[02:10:38]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+DEBUG [2026-03-15 02:10:39.52]: Checking if there are any plugins that should be loaded...
+[33mSuccessfully loaded Appfile at path '/Users/admin/Documents/GitHub/video-editor/fastlane/Appfile'[0m
+- [36mapp_identifier[0m: '[32mcom.theholylabs.creator[0m'
+- [36mapple_id[0m: '[32mpolskoydm@outlook.com[0m'
+- [36mteam_id[0m: '[32mLJPXXSNQZ9[0m'
+- [36mitc_team_id[0m: '[32m121334693[0m'
+-------
+INFO [2026-03-15 02:10:39.95]: [32m------------------------------[0m
+INFO [2026-03-15 02:10:39.95]: [32m--- Step: default_platform ---[0m
+INFO [2026-03-15 02:10:39.95]: [32m------------------------------[0m
+WARN [2026-03-15 02:10:39.95]: [33m[33mLane Context:[0m
+INFO [2026-03-15 02:10:39.95]: {:DEFAULT_PLATFORM=>:ios}
+ERROR [2026-03-15 02:10:39.95]: [31mCould not find lane 'ios list_localizations_all'. Available lanes: ios upload_aso_existing[0m
+INFO [2026-03-15 02:10:39.95]: [32mSuccessfully generated documentation at path '/Users/admin/Documents/GitHub/video-editor/fastlane/README.md'[0m
+
++---------------------------------------+
+|           [32mfastlane summary[0m            |
++------+------------------+-------------+
+| Step | Action           | Time (in s) |
++------+------------------+-------------+
+| 1    | default_platform | 0           |
++------+------------------+-------------+
+
+ERROR [2026-03-15 02:10:39.95]: [31mfastlane finished with errors[0m
+WARN [2026-03-15 02:10:40.27]: [33mWARNING: Support for your Ruby version (3.1.2) is going away. fastlane will soon require Ruby 3.2.0 or newer.[0m
+/Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/interface.rb:141:in `user_error!': \e[31m[!] Could not find lane 'ios list_localizations_all'. Available lanes: ios upload_aso_existing\e[0m (FastlaneCore::Interface::FastlaneError)
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/ui.rb:17:in `method_missing'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:29:in `execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane_manager.rb:46:in `cruise_lane'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/command_line_handler.rb:34:in `handle'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:110:in `block (2 levels) in run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:187:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:157:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/runner.rb:444:in `run_active_command'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/fastlane_runner.rb:124:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/delegates.rb:18:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:363:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:43:in `start'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/cli_tools_distributor.rb:132:in `take_off'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/bin/fastlane:23:in `<top (required)>'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `load'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `<main>'
+/Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/interface.rb:141:in `user_error!': Could not find lane 'ios list_localizations_all'. Available lanes: ios upload_aso_existing (FastlaneCore::Interface::FastlaneError)
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/ui.rb:17:in `method_missing'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/runner.rb:29:in `execute'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/lane_manager.rb:46:in `cruise_lane'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/command_line_handler.rb:34:in `handle'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:110:in `block (2 levels) in run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:187:in `call'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/command.rb:157:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/runner.rb:444:in `run_active_command'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane_core/lib/fastlane_core/ui/fastlane_runner.rb:124:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/commander-4.6.0/lib/commander/delegates.rb:18:in `run!'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:363:in `run'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/commands_generator.rb:43:in `start'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/fastlane/lib/fastlane/cli_tools_distributor.rb:132:in `take_off'
+	from /Users/admin/.rbenv/versions/3.1.2/lib/ruby/gems/3.1.0/gems/fastlane-2.232.2/bin/fastlane:23:in `<top (required)>'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `load'
+	from /Users/admin/.rbenv/versions/3.1.2/bin/fastlane:25:in `<main>'

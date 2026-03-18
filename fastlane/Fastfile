@@ -1,0 +1,112 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Diagnostic lane to list ALL existing localizations"
+  lane :list_localizations_all do
+    api_key = app_store_connect_api_key(
+      key_id: "TR5F2GR4AJ",
+      issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",
+      key_filepath: "/Users/admin/Documents/GitHub/video-editor/fastlane/AuthKey_TR5F2GR4AJ.p8"
+    )
+
+    app = Spaceship::ConnectAPI::App.find("com.theholylabs.creator")
+    version = app.get_edit_app_store_version
+    
+    if version
+      UI.message("--- Version: #{version.version_string} (#{version.app_store_state}) ---")
+      locs = version.get_app_store_version_localizations
+      all_locales = locs.map(&:locale)
+      UI.message("--- Found #{all_locales.count} Localizations: #{all_locales.join(', ')} ---")
+    else
+      UI.user_error!("No edit version found for this app.")
+    end
+  end
+
+  desc "Upload screenshots and metadata (20 languages) to App Store Connect"
+  lane :upload_aso do
+    api_key = app_store_connect_api_key(
+      key_id: "TR5F2GR4AJ",
+      issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",
+      key_filepath: "/Users/admin/Documents/GitHub/video-editor/fastlane/AuthKey_TR5F2GR4AJ.p8"
+    )
+
+    deliver(
+      api_key: api_key,
+      skip_binary_upload: true,
+      skip_app_version_update: false,
+      force: true,
+      overwrite_screenshots: true,
+      screenshots_path: "./fastlane/screenshots",
+      metadata_path: "./fastlane/metadata",
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false,
+      ignore_language_directory_validation: true
+    )
+  end
+
+  desc "Add missing locales via Spaceship then push metadata"
+  lane :add_locales_and_upload do
+    api_key = app_store_connect_api_key(
+      key_id: "TR5F2GR4AJ",
+      issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",
+      key_filepath: "/Users/admin/Documents/GitHub/video-editor/fastlane/AuthKey_TR5F2GR4AJ.p8"
+    )
+
+    target_locales = %w[
+      ar-SA de-DE en-CA en-GB en-US es-ES es-MX fr-FR id it ja ko nl-NL pt-BR pt-PT ru th tr vi zh-Hans zh-Hant
+    ]
+
+    app = Spaceship::ConnectAPI::App.find("com.theholylabs.creator")
+    version = app.get_edit_app_store_version(includes: "appStoreVersionLocalizations")
+    existing = version.get_app_store_version_localizations.map(&:locale)
+    UI.message("Existing locales: #{existing.join(', ')}")
+
+    names = {
+      "en-US" => "CreatorAI - AI Video Maker",
+      "en-GB" => "CreatorAI - AI Video Maker",
+      "en-CA" => "CreatorAI",
+      "de-DE" => "CreatorAI - KI Video Maker",
+      "fr-FR" => "CreatorAI - Vidéo IA",
+      "es-ES" => "CreatorAI - Video con IA",
+      "es-MX" => "CreatorAI - Video con IA",
+      "pt-BR" => "CreatorAI - Vídeo com IA",
+      "pt-PT" => "CreatorAI - Vídeo com IA",
+      "ar-SA" => "CreatorAI",
+      "ja"    => "CreatorAI - AI動画メーカー",
+      "ko"    => "CreatorAI - AI 영상 메이커",
+      "zh-Hans" => "CreatorAI - AI视频创作",
+      "zh-Hant" => "CreatorAI - AI影片創作",
+      "it"    => "CreatorAI - Video con IA",
+      "nl-NL" => "CreatorAI - AI Videogenerator",
+      "ru"    => "CreatorAI - ИИ видео",
+      "tr"    => "CreatorAI - AI Video Yapıcı",
+      "id"    => "CreatorAI - Pembuat Video AI",
+      "th"    => "CreatorAI - AI วิดีโอ",
+      "vi"    => "CreatorAI - Tạo Video AI",
+    }
+
+    (target_locales - existing).each do |locale|
+      name = names[locale] || "CreatorAI"
+      UI.message("Adding locale #{locale} with name '#{name}'")
+      begin
+        version.create_app_store_version_localization(attributes: { locale: locale, name: name })
+        UI.success("Added #{locale}")
+      rescue => e
+        UI.error("Failed to add #{locale}: #{e.message}")
+      end
+    end
+
+    deliver(
+      api_key: api_key,
+      skip_binary_upload: true,
+      skip_app_version_update: false,
+      force: true,
+      overwrite_screenshots: true,
+      screenshots_path: "./fastlane/screenshots",
+      metadata_path: "./fastlane/metadata",
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false,
+      ignore_language_directory_validation: true
+    )
+  end
+end

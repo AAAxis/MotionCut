@@ -12,6 +12,11 @@
 # Google Sign-In
 -keep class com.google.android.gms.auth.** { *; }
 
+# R8 missing class warnings
+-dontwarn java.lang.management.ManagementFactory
+-dontwarn java.lang.management.RuntimeMXBean
+-dontwarn org.slf4j.impl.StaticLoggerBinder
+
 # Kotlin serialization
 -keepattributes *Annotation*
 -keepclassmembers class kotlinx.serialization.json.** { *** Companion; }

@@ -1,0 +1,4 @@
+• Új AI Avatár Stúdió — hiperrealisztikus digitális műsorvezetők
+• Videó renderelés 3× gyorsabb
+• Beat Sync fejlesztések automatikus tempóérzékeléssel
+• Hibajavítások és teljesítményjavítások

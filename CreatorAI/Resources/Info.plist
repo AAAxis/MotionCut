@@ -7,9 +7,15 @@
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleShortVersionString</key>
+<<<<<<< Updated upstream
 	<string>2.0</string>
 	<key>CFBundleVersion</key>
 	<string>6</string>
+=======
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+>>>>>>> Stashed changes
 	<key>CFBundleName</key>
 	<string>CreatorAI</string>
 	<key>CFBundlePackageType</key>

@@ -61,7 +61,7 @@ async function init() {
       id SERIAL PRIMARY KEY,
       external_id TEXT UNIQUE,
       email TEXT,
-      credits INTEGER DEFAULT 3,
+      credits INTEGER DEFAULT 10,
       is_subscribed BOOLEAN DEFAULT false,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
