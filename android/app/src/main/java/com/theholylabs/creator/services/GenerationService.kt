@@ -109,13 +109,23 @@ object GenerationService {
         }
 
         return try {
-            client.post("${BuildConfig.API_BASE_URL}/api/create/generate") {
+            val response = client.post("${BuildConfig.API_BASE_URL}/api/create/generate") {
                 contentType(ContentType.Application.Json)
                 setBody(body)
-            }.body()
+            }
+            response.body()
+        } catch (e: io.ktor.client.plugins.ClientRequestException) {
+            // Handle 4xx errors (e.g., 402 Insufficient credits)
+            try {
+                val errorBody = e.response.body<AICreateResponse>()
+                Log.e("GenerationService", "startAICreate 4xx: ${errorBody.error}")
+                errorBody
+            } catch (_: Exception) {
+                AICreateResponse(error = e.message)
+            }
         } catch (e: Exception) {
             Log.e("GenerationService", "startAICreate failed: ${e.message}")
-            null
+            AICreateResponse(error = e.message)
         }
     }
 

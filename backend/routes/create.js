@@ -111,7 +111,15 @@ router.post('/generate', async (req, res) => {
     // Credit check
     if (userId) {
       const userCheck = await req.db.query('SELECT credits, is_subscribed FROM users WHERE external_id = $1', [userId]);
-      const user = userCheck.rows[0];
+      let user = userCheck.rows[0];
+      if (!user) {
+        // Auto-create user with free credits
+        const insertResult = await req.db.query(
+          'INSERT INTO users (external_id, credits) VALUES ($1, 10) ON CONFLICT (external_id) DO NOTHING RETURNING credits',
+          [userId]
+        );
+        user = insertResult.rows[0] || { credits: 10, is_subscribed: false };
+      }
       if (user && !user.is_subscribed) {
         const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
         if (user.credits < cost) {

@@ -72,6 +72,7 @@ class AppState(application: Application) : AndroidViewModel(application) {
     }
 
     fun setAuth(token: String, userId: String, email: String? = null) {
+        android.util.Log.d("AppState", "setAuth: userId=$userId email=$email credits=${_uiState.value.credits}")
         storage.put("jwt", token)
         storage.put("userId", userId)
         if (email != null) storage.put("userEmail", email) else storage.remove("userEmail")
@@ -85,7 +86,11 @@ class AppState(application: Application) : AndroidViewModel(application) {
         }
 
         PurchaseService.configure(getApplication(), userId)
-        viewModelScope.launch { fetchCredits() }
+        viewModelScope.launch {
+            // Ensure server has at least 10 credits for this user
+            ensureServerCredits(userId, 10)
+            fetchCredits()
+        }
     }
 
     fun logout() {
@@ -121,10 +126,14 @@ class AppState(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingCredits = true) }
             try {
-                val credits = fetchCreditsFromServer(userId)
-                if (credits != null) {
-                    prefs.edit().putInt("user_credits", credits).apply()
-                    _uiState.update { it.copy(credits = credits) }
+                val serverCredits = fetchCreditsFromServer(userId)
+                val localCredits = _uiState.value.credits
+                android.util.Log.d("AppState", "fetchCredits: server=$serverCredits local=$localCredits userId=$userId")
+                if (serverCredits != null && serverCredits > localCredits) {
+                    // Only update if server has MORE credits (don't let server zero out local)
+                    android.util.Log.d("AppState", "fetchCredits: using server=$serverCredits")
+                    prefs.edit().putInt("user_credits", serverCredits).apply()
+                    _uiState.update { it.copy(credits = serverCredits) }
                 }
             } finally {
                 _uiState.update { it.copy(isLoadingCredits = false) }
@@ -137,6 +146,61 @@ class AppState(application: Application) : AndroidViewModel(application) {
         val updated = maxOf(0, current - amount)
         prefs.edit().putInt("user_credits", updated).apply()
         _uiState.update { it.copy(credits = updated) }
+    }
+
+    fun addCredits(amount: Int) {
+        val current = _uiState.value.credits
+        val updated = current + amount
+        prefs.edit().putInt("user_credits", updated).apply()
+        _uiState.update { it.copy(credits = updated) }
+
+        // Also add on server so generation doesn't fail server-side credit check
+        val userId = _uiState.value.userId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("${BuildConfig.API_BASE_URL}/api/credits/add")
+                val conn = url.openConnection() as HttpsURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                val body = JSONObject().apply {
+                    put("userId", userId)
+                    put("amount", amount)
+                }.toString()
+                conn.outputStream.use { it.write(body.toByteArray()) }
+                conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+            } catch (_: Exception) {}
+        }
+    }
+
+    private suspend fun ensureServerCredits(userId: String, minCredits: Int) = withContext(Dispatchers.IO) {
+        try {
+            // Check current server credits
+            val current = fetchCreditsFromServer(userId)
+            android.util.Log.d("AppState", "ensureServerCredits: current=$current min=$minCredits")
+            if (current != null && current < minCredits) {
+                // Use the check endpoint which auto-creates user with FREE_CREDITS
+                // Then try adding the difference via direct POST
+                val diff = minCredits - current
+                val url = URL("${BuildConfig.API_BASE_URL}/api/credits/add")
+                val conn = url.openConnection() as HttpsURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                conn.connectTimeout = 5000
+                val body = JSONObject().apply {
+                    put("userId", userId)
+                    put("amount", diff)
+                }.toString()
+                conn.outputStream.use { it.write(body.toByteArray()) }
+                val resp = conn.inputStream.bufferedReader().readText()
+                android.util.Log.d("AppState", "ensureServerCredits: add response=$resp")
+                conn.disconnect()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("AppState", "ensureServerCredits failed: ${e.message}")
+        }
     }
 
     // MARK: - Private

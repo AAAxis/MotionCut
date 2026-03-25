@@ -1,0 +1,58 @@
+app_name: "CreatorAI"
+bundle_id_ios: "com.theholylabs.creatorai"
+bundle_id_android: "com.theholylabs.creator"
+app_version: "2.0"
+business_type: "mobile_app_freemium"
+
+product:
+  description: "AI-powered video editor that generates reels and video ads from text prompts"
+  core_features:
+    - "AI Reel Generation (Seedance Lite, Seedance Pro, Kling v2.1)"
+    - "AI Ad Creator (URL-to-video-ad pipeline)"
+    - "Video Editor (trim, subtitles, music, compression)"
+    - "AI Avatar selection"
+    - "Multi-language support (21+ languages)"
+  monetization: "credit_packs_iap"
+  credit_costs:
+    seedance_lite_5s: 5
+    seedance_pro_5s: 10
+    kling_v2_5s: 15
+    ai_ad_full: 10
+
+target_audience:
+  primary_segments:
+    - name: "Aspiring Creators"
+      age_range: "16-24"
+      pain_point: "Editing is intimidating and time-consuming"
+    - name: "Side-Hustle Creators"
+      age_range: "22-32"
+      pain_point: "Need volume content fast, no time for manual editing"
+    - name: "Social Media Managers"
+      age_range: "24-35"
+      pain_point: "Client demands exceed manual editing capacity"
+    - name: "Small Business Owners"
+      age_range: "28-45"
+      pain_point: "Need product ads without agency budgets"
+
+  geographic_tiers:
+    tier_1: ["US", "UK", "CA", "AU"]
+    tier_2: ["DE", "FR", "ES", "IT", "BR"]
+    tier_3: ["IN", "ID", "PH", "MX"]
+
+competitive_landscape:
+  direct_competitors: ["CapCut", "InShot", "VN Video Editor", "Splice"]
+  ai_competitors: ["Luma AI", "Pika", "Runway", "Opus Clip"]
+  positioning: "AI-first generation (not just editing) - type concept, get finished video"
+
+budget:
+  testing_daily: 150
+  scaling_daily_target: 500
+  monthly_ceiling: 15000
+  currency: "USD"
+
+goals:
+  target_cpi_tier1: 2.50
+  target_cpi_tier2: 1.20
+  target_cpi_tier3: 0.40
+  target_day1_retention: 0.35
+  target_cost_per_purchase: 15.00

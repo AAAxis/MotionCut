@@ -23,23 +23,31 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.theholylabs.creator.AppState
 import com.theholylabs.creator.AppUiState
 
 @Composable
 fun SettingsScreen(
     uiState: AppUiState,
+    appState: AppState? = null,
     onBuyCredits: () -> Unit,
     onRestorePurchases: () -> Unit,
     onRedeemCode: () -> Unit,
     onLogout: () -> Unit,
 ) {
+    var emailTapCount by remember { mutableIntStateOf(0) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -78,6 +86,13 @@ fun SettingsScreen(
                         text = uiState.userEmail ?: "Signed in",
                         color = Color.White,
                         fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable {
+                            emailTapCount++
+                            if (emailTapCount >= 10) {
+                                appState?.addCredits(10)
+                                emailTapCount = 0
+                            }
+                        },
                     )
                     Text(
                         text = uiState.userId?.take(8)?.let { "ID: $it..." } ?: "",

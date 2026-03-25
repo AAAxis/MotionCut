@@ -38,7 +38,8 @@ fun LibraryScreen(
     uiState: AppUiState,
     vm: LibraryViewModel = viewModel(),
     onPlay: (String) -> Unit,
-    onShare: (String) -> Unit
+    onShare: (String) -> Unit,
+    onEdit: (videoUrl: String, videoName: String) -> Unit = { _, _ -> }
 ) {
     val serverGenerations by vm.generations.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
@@ -86,7 +87,8 @@ fun LibraryScreen(
                         vm = vm,
                         userId = uiState.userId ?: "",
                         onPlay = onPlay,
-                        onShare = onShare
+                        onShare = onShare,
+                        onEdit = onEdit
                     )
                 }
             }
@@ -132,7 +134,8 @@ fun GenerationsList(
     vm: LibraryViewModel,
     userId: String,
     onPlay: (String) -> Unit,
-    onShare: (String) -> Unit
+    onShare: (String) -> Unit,
+    onEdit: (videoUrl: String, videoName: String) -> Unit = { _, _ -> }
 ) {
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -170,7 +173,8 @@ fun GenerationsList(
                         gen = gen,
                         onDelete = { vm.deleteGeneration(gen.id, userId) },
                         onPlay = { if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) gen.resultVideoUrl?.let(onPlay) },
-                        onShare = { gen.resultVideoUrl?.let(onShare) }
+                        onShare = { gen.resultVideoUrl?.let(onShare) },
+                        onEdit = { if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) gen.resultVideoUrl?.let { onEdit(it, gen.videoName) } }
                     )
                 }
             )
@@ -183,7 +187,8 @@ fun GenerationListItem(
     gen: Generation,
     onDelete: () -> Unit,
     onPlay: () -> Unit,
-    onShare: () -> Unit
+    onShare: () -> Unit,
+    onEdit: () -> Unit = {}
 ) {
     val context = LocalContext.current
     Row(
@@ -255,6 +260,12 @@ fun GenerationListItem(
 
         if (gen.status != GenerationStatus.PROCESSING) {
             StatusBadge(status = gen.status)
+        }
+
+        if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) {
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFFFF9500))
+            }
         }
 
         IconButton(onClick = onShare) {

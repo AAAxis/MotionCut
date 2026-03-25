@@ -88,10 +88,8 @@ class CreateViewModel : ViewModel() {
             return
         }
 
-        if (appState.credits < 10) {
-            _errorMessage.value = "Not enough credits"
-            return
-        }
+        // Server-side credit check handles this; skip local check
+        // to avoid stale local values blocking generation
 
         viewModelScope.launch {
             _isLoading.value = true

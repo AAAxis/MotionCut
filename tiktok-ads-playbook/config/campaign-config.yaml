@@ -1,0 +1,73 @@
+platform: "tiktok"
+ads_manager_account_id: "<FILL_IN>"
+mmp: "appsflyer"  # or "adjust"
+
+objectives:
+  testing: "app_install"
+  scaling: "app_event_optimization"
+  retargeting: "app_event_optimization"
+
+phases:
+  testing:
+    duration_days: 21
+    daily_budget: 150
+    budget_type: "ABO"
+    ad_groups: 3
+    ads_per_group: 4
+    optimization_event: "install"
+    kill_rules:
+      cpi_max: 5.00
+      min_spend_before_kill: 30
+      min_days_before_kill: 3
+    scale_rules:
+      cpi_target: 2.00
+      ctr_min: 0.01
+      consecutive_days: 3
+      budget_increase_pct: 0.20
+
+  scaling:
+    daily_budget: 500
+    budget_type: "CBO"
+    optimization_event: "first_generation"
+    creative_refresh_days: 10
+    budget_increase_interval_hours: 48
+    budget_increase_pct: 0.20
+    max_budget_increase_pct: 0.30
+
+  retargeting:
+    daily_budget: 75
+    budget_type: "ABO"
+    audiences:
+      - type: "video_viewers_75pct"
+        lookback_days: 7
+      - type: "profile_visitors"
+        lookback_days: 14
+      - type: "installers_not_purchased"
+        lookback_days: 30
+
+targeting:
+  testing:
+    age_range: [18, 44]
+    genders: "all"
+    locations: ["US"]
+    languages: ["en"]
+  scaling:
+    expand_geos: ["UK", "CA", "AU"]
+    lookalike_sources: ["installers", "purchasers"]
+    lookalike_sizes: [0.01, 0.03, 0.05]
+
+placements:
+  enabled: ["tiktok_feed", "tiktok_search"]
+  disabled: ["pangle", "global_app_bundle"]
+  test_later: ["pangle"]
+
+attribution:
+  click_window_days: 7
+  view_window_days: 1
+  skan_enabled: true
+  skan_version: "4.0"
+
+naming_conventions:
+  campaign: "[Objective]_[App]_[Phase]_[YYYY-MM-DD]"
+  ad_group: "[Targeting]_[Placement]_[DailyBudget]_[OptimizationEvent]"
+  ad: "[CreativeType]_[HookType]_[CTA]_[Version]"

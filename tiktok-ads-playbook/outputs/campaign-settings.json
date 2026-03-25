@@ -1,0 +1,208 @@
+{
+  "campaigns": [
+    {
+      "name": "AppInstall_CreatorAI_Testing_2026-03-24",
+      "objective": "APP_PROMOTION",
+      "optimization_goal": "APP_INSTALL",
+      "budget_type": "BUDGET_MODE_DAY",
+      "budget_amount": 150,
+      "currency": "USD",
+      "schedule": {
+        "start_date": "2026-03-24",
+        "end_date": null,
+        "schedule_type": "CONTINUOUS"
+      },
+      "ad_groups": [
+        {
+          "name": "Broad-18to44_TikTok_$50_Install",
+          "daily_budget": 50,
+          "optimization_event": "INSTALL",
+          "bid_strategy": "LOWEST_COST",
+          "placement": ["TIKTOK_FEED", "TIKTOK_SEARCH"],
+          "targeting": {
+            "age_groups": ["18-24", "25-34", "35-44"],
+            "genders": "ALL",
+            "locations": ["US"],
+            "languages": ["en"],
+            "interests": [],
+            "behaviors": [],
+            "exclusions": {
+              "custom_audiences": ["existing_installers"]
+            }
+          },
+          "schedule": {
+            "dayparting": "ALL_DAY"
+          },
+          "ads": [
+            {
+              "name": "UGC-TalkingHead_ProblemAgitate_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "creative_type": "UGC_TALKING_HEAD",
+              "hook_type": "PROBLEM_AGITATE",
+              "script_reference": "script-1-hookA",
+              "cta_type": "DOWNLOAD",
+              "cta_text": "Download",
+              "landing_page_type": "APP_STORE",
+              "video_duration_seconds": 24
+            },
+            {
+              "name": "UGC-TalkingHead_SpeedDemo_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "creative_type": "UGC_TALKING_HEAD",
+              "hook_type": "PATTERN_INTERRUPT",
+              "script_reference": "script-1-hookB",
+              "cta_type": "DOWNLOAD",
+              "cta_text": "Download",
+              "landing_page_type": "APP_STORE",
+              "video_duration_seconds": 24
+            },
+            {
+              "name": "UGC-TalkingHead_FreelancerPain_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "creative_type": "UGC_TALKING_HEAD_BROLL",
+              "hook_type": "STORY_BASED",
+              "script_reference": "script-2-hookA",
+              "cta_type": "DOWNLOAD",
+              "cta_text": "Download",
+              "landing_page_type": "APP_STORE",
+              "video_duration_seconds": 28
+            },
+            {
+              "name": "BeforeAfter_AdGlowUp_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "creative_type": "BEFORE_AFTER",
+              "hook_type": "BEFORE_AFTER",
+              "script_reference": "script-3-hookA",
+              "cta_type": "DOWNLOAD",
+              "cta_text": "Download",
+              "landing_page_type": "APP_STORE",
+              "video_duration_seconds": 30
+            }
+          ]
+        },
+        {
+          "name": "Interest-Creators_TikTok_$50_Install",
+          "daily_budget": 50,
+          "optimization_event": "INSTALL",
+          "bid_strategy": "LOWEST_COST",
+          "placement": ["TIKTOK_FEED", "TIKTOK_SEARCH"],
+          "targeting": {
+            "age_groups": ["18-24", "25-34", "35-44"],
+            "genders": "ALL",
+            "locations": ["US"],
+            "languages": ["en"],
+            "interests": [
+              "Video Editing",
+              "Photography",
+              "Content Creation",
+              "Social Media Marketing",
+              "Videography",
+              "Digital Art"
+            ],
+            "behaviors": [
+              "Creator Account",
+              "Video Upload Frequency: High"
+            ],
+            "exclusions": {
+              "custom_audiences": ["existing_installers"]
+            }
+          },
+          "ads": [
+            {
+              "name": "UGC-TalkingHead_ProblemAgitate_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "script-1-hookA"
+            },
+            {
+              "name": "UGC-TalkingHead_SpeedDemo_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "script-1-hookB"
+            },
+            {
+              "name": "UGC-TalkingHead_FreelancerPain_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "script-2-hookA"
+            },
+            {
+              "name": "BeforeAfter_AdGlowUp_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "script-3-hookA"
+            }
+          ]
+        },
+        {
+          "name": "Interest-SmallBiz_TikTok_$50_Install",
+          "daily_budget": 50,
+          "optimization_event": "INSTALL",
+          "bid_strategy": "LOWEST_COST",
+          "placement": ["TIKTOK_FEED", "TIKTOK_SEARCH"],
+          "targeting": {
+            "age_groups": ["25-34", "35-44"],
+            "genders": "ALL",
+            "locations": ["US"],
+            "languages": ["en"],
+            "interests": [
+              "Ecommerce",
+              "Small Business",
+              "Entrepreneurship",
+              "Digital Marketing",
+              "Dropshipping",
+              "Online Shopping"
+            ],
+            "behaviors": [
+              "Business Account"
+            ],
+            "exclusions": {
+              "custom_audiences": ["existing_installers"]
+            }
+          },
+          "ads": [
+            {
+              "name": "UGC-TalkingHead_BizPain_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "script-3-hookA"
+            },
+            {
+              "name": "ScreenRec_AdCreatorDemo_TryFree_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "concept-5-demo"
+            },
+            {
+              "name": "UGC-TalkingHead_CostBreakdown_Download_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "concept-9"
+            },
+            {
+              "name": "BeforeAfter_AdGlowUp_TryFree_v1",
+              "format": "SINGLE_VIDEO",
+              "script_reference": "script-3-hookB"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "events_configuration": {
+    "standard_events": [
+      {"event": "Install", "trigger": "App first opened after download"},
+      {"event": "Registration", "trigger": "User completes onboarding"},
+      {"event": "Purchase", "trigger": "User buys credit pack"},
+      {"event": "ViewContent", "trigger": "User views Create tab"}
+    ],
+    "custom_events": [
+      {"event": "generation_started", "trigger": "User taps Generate button"},
+      {"event": "generation_completed", "trigger": "AI video finishes rendering"},
+      {"event": "video_exported", "trigger": "User exports/saves video"},
+      {"event": "ad_created", "trigger": "User completes AI Ad flow"},
+      {"event": "credits_depleted", "trigger": "User runs out of credits"},
+      {"event": "share_completed", "trigger": "User shares video externally"}
+    ],
+    "skan_conversion_values": {
+      "0": "install_only",
+      "1-5": "generated_video",
+      "6-15": "exported_video",
+      "16-40": "purchased_credits",
+      "41-63": "repeat_purchaser"
+    }
+  }
+}

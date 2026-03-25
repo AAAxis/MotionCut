@@ -23,10 +23,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("/Users/admin/Documents/creatorai-release.jks")
-            storePassword = "creatorai2024"
-            keyAlias = "creatorai"
-            keyPassword = "creatorai2024"
+            storeFile = file("/Users/admin/Desktop/CreatorAI_Android_Signing/release.jks")
+            storePassword = "CreatorAI2024!"
+            keyAlias = "upload"
+            keyPassword = "CreatorAI2024!"
         }
     }
 
@@ -90,4 +90,8 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    implementation(libs.media3.transformer)
+    implementation(libs.media3.effect)
+    implementation(libs.media3.common)
+    implementation(libs.work.runtime)
 }

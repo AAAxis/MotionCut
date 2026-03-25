@@ -1,0 +1,38 @@
+tiktok_policies:
+  prohibited_content:
+    - "Unsubstantiated health claims"
+    - "Guaranteed income or results claims without disclaimers"
+    - "Misleading before/after without disclaimers"
+    - "Unauthorized use of copyrighted music (must use Commercial Music Library)"
+    - "Unauthorized celebrity/influencer likeness"
+    - "Content targeting minors with purchase pressure"
+    - "Fake UI elements (fake play buttons, fake notifications)"
+
+  required_disclaimers:
+    testimonials: "Results shown are from real users and may vary. Individual results depend on usage."
+    before_after: "Results may vary. AI-generated content quality depends on input and selected engine."
+    pricing_claims: "Credit costs as of [date]. Prices subject to change."
+    free_claims: "Free download with limited starter credits. Additional credits available via in-app purchase."
+
+  age_restrictions:
+    minimum_target_age: 18
+    content_rating: "General audience"
+
+ftc_requirements:
+  sponsored_content: "Must clearly disclose paid partnerships"
+  ugc_creators: "Must have written agreement and disclosure in caption if paid"
+  results_claims: "Must have substantiation (screenshots, data) for specific numerical claims"
+
+data_privacy:
+  gdpr: "Ensure EU user data handling complies with GDPR. Use TikTok consent mode."
+  ccpa: "Provide opt-out mechanism for California users. Configure in TikTok privacy settings."
+  att: "NSUserTrackingUsageDescription already configured in Info.plist"
+
+music_licensing:
+  requirement: "All ad creative must use commercially licensed music"
+  sources:
+    - "TikTok Commercial Music Library (free for advertisers)"
+    - "Epidemic Sound (paid license)"
+    - "Artlist (paid license)"
+    - "Original compositions"
+  prohibited: "Do NOT use trending TikTok sounds unless verified for commercial/ad use"
