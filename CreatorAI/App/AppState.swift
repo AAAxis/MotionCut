@@ -63,6 +63,10 @@ class AppState: ObservableObject {
         } else {
             KeychainHelper.delete(service: keychainService, account: "userEmail")
         }
+        // Cache userId for FCM token refresh (mirrors Android SharedPreferences)
+        UserDefaults.standard.set(userId, forKey: "cached_user_id")
+        // Register FCM token with Supabase
+        FCMService.shared.registerTokenForUser(userId: userId)
         PurchaseService.shared.configure(userId: userId)
         Task { await fetchCredits() }
     }
@@ -74,9 +78,11 @@ class AppState: ObservableObject {
         self.isAuthenticated = false
         self.credits = 0
         UserDefaults.standard.set(0, forKey: "user_credits")
+        UserDefaults.standard.removeObject(forKey: "cached_user_id")
         KeychainHelper.delete(service: keychainService, account: "jwt")
         KeychainHelper.delete(service: keychainService, account: "userId")
         KeychainHelper.delete(service: keychainService, account: "userEmail")
+        FirebaseAuthService.shared.signOut()
     }
 
     // MARK: - Credits (server-side)
@@ -86,7 +92,7 @@ class AppState: ObservableObject {
         isLoadingCredits = true
         defer { isLoadingCredits = false }
 
-        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
         guard let url = URL(string: "\(baseURL)/api/credits/get") else { return }
 
         var request = URLRequest(url: url)
@@ -114,6 +120,21 @@ class AppState: ObservableObject {
     func deductCredits(_ amount: Int) {
         credits = max(0, credits - amount)
         UserDefaults.standard.set(credits, forKey: "user_credits")
+
+        // Sync deduction to server (same as Android)
+        guard let userId = userId else { return }
+        Task {
+            let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
+            guard let url = URL(string: "\(baseURL)/api/credits/deduct") else { return }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try? JSONSerialization.data(withJSONObject: [
+                "userId": userId,
+                "amount": amount
+            ])
+            _ = try? await URLSession.shared.data(for: request)
+        }
     }
 
     var canGenerate: Bool {

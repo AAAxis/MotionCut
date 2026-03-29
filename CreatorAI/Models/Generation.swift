@@ -18,25 +18,37 @@ struct Generation: Identifiable, Codable, Equatable {
     /// Resolves saved_videos paths relative to Documents at runtime (container UUID can change between launches).
     /// Falls back to resultVideoUrl for remote (Supabase) URLs.
     var videoFileURL: URL? {
+        let savedDir = FileStorageService.shared.savedVideosDirectory
+
         // 1. Check if we have a locally saved video (by generation id)
-        let localFile = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("\(id).mp4")
+        let localFile = savedDir.appendingPathComponent("\(id).mp4")
         if FileManager.default.fileExists(atPath: localFile.path) {
             return localFile
         }
 
-        // 2. Check videoUri for absolute paths that still exist
+        // 2. Check for first clip file (local reel generations save as {id}_clip_0.mp4)
+        let firstClip = savedDir.appendingPathComponent("\(id)_clip_0.mp4")
+        if FileManager.default.fileExists(atPath: firstClip.path) {
+            return firstClip
+        }
+
+        // 3. Check videoUri — resolve stale container paths by filename
         if let raw = videoUri, !raw.isEmpty {
             let path = raw.replacingOccurrences(of: "file://", with: "")
-            // Skip cache-only paths
-            if !path.contains("Caches") && !path.contains("rendered_videos") {
-                let url = raw.hasPrefix("file://") ? URL(string: raw) : URL(fileURLWithPath: path)
-                if let url = url, FileManager.default.fileExists(atPath: url.path) {
-                    return url
+            if FileManager.default.fileExists(atPath: path) {
+                return URL(fileURLWithPath: path)
+            }
+            // Try resolving filename in savedVideosDirectory
+            let filename = (path as NSString).lastPathComponent
+            if !filename.isEmpty {
+                let resolved = savedDir.appendingPathComponent(filename)
+                if FileManager.default.fileExists(atPath: resolved.path) {
+                    return resolved
                 }
             }
         }
 
-        // 3. Return remote URL (Supabase Storage) for streaming/download
+        // 4. Return remote URL (Supabase Storage) for streaming/download
         if let remote = resultVideoUrl, remote.hasPrefix("http") {
             return URL(string: remote)
         }
@@ -46,14 +58,24 @@ struct Generation: Identifiable, Codable, Equatable {
 
     /// True when the video is only available remotely (not cached locally).
     var isCloudOnly: Bool {
-        let localFile = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("\(id).mp4")
-        if FileManager.default.fileExists(atPath: localFile.path) { return false }
-        if let raw = videoUri, !raw.isEmpty {
-            let path = raw.replacingOccurrences(of: "file://", with: "")
-            if !path.contains("Caches"), FileManager.default.fileExists(atPath: path) { return false }
-        }
+        // If videoFileURL resolves to a local file, it's not cloud-only
+        if let url = videoFileURL, url.isFileURL { return false }
+        // If we have takesJson, clips are local
+        if let takes = takesJson, !takes.isEmpty { return false }
         return resultVideoUrl?.hasPrefix("http") == true
     }
+    /// Resolves musicFile path, handling stale container UUIDs.
+    var resolvedMusicFile: String? {
+        guard let raw = musicFile, !raw.isEmpty else { return nil }
+        if raw.hasPrefix("http") { return raw }
+        let path = raw.replacingOccurrences(of: "file://", with: "")
+        if FileManager.default.fileExists(atPath: path) { return path }
+        let filename = (path as NSString).lastPathComponent
+        let resolved = FileStorageService.shared.savedVideosDirectory.appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: resolved.path) { return resolved.path }
+        return nil
+    }
+
     var createdAt: Date
     var userId: String?
     var musicId: String?

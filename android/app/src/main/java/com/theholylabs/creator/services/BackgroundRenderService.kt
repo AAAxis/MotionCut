@@ -30,10 +30,13 @@ object BackgroundRenderService {
         selectedMusic: MusicTrack?,
         musicVolume: Float,
         addCaptionsViaCloud: Boolean,
+        burnSubtitles: Boolean = false,
+        subtitleYPosition: Float = 0.80f,
+        existingGenerationId: String? = null,
         onStatusUpdate: (GenerationStatus) -> Unit,
         onProgress: (String) -> Unit
     ): String? {
-        val generationId = UUID.randomUUID().toString()
+        val generationId = existingGenerationId ?: UUID.randomUUID().toString()
         val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)
 
         // Create initial generation record
@@ -51,8 +54,16 @@ object BackgroundRenderService {
         // Resolve music file
         var musicFile: File? = null
         if (selectedMusic != null) {
-            onProgress("Downloading music...")
-            musicFile = AudioMixerService.downloadAndCacheMusic(selectedMusic.file, selectedMusic.id)
+            val musicPath = selectedMusic.file
+            val localFile = File(musicPath)
+            if (localFile.exists()) {
+                // Local file (e.g. voiceover) — use directly
+                musicFile = localFile
+            } else {
+                // Remote URL — download and cache
+                onProgress("Downloading music...")
+                musicFile = AudioMixerService.downloadAndCacheMusic(musicPath, selectedMusic.id)
+            }
         }
 
         // Render the video
@@ -63,6 +74,8 @@ object BackgroundRenderService {
             musicVolume = musicVolume,
             aspectRatio = aspectRatio,
             exportQuality = exportQuality,
+            burnSubtitles = burnSubtitles,
+            subtitleYPosition = subtitleYPosition,
             onProgress = onProgress
         )
 
@@ -73,10 +86,33 @@ object BackgroundRenderService {
             // Save to device gallery
             saveToGallery(context, savedFile, videoName)
 
+            // Build takesJson so the editor can restore all clips when re-opened
+            val takesJson = try {
+                kotlinx.serialization.json.Json.encodeToString(
+                    kotlinx.serialization.builtins.ListSerializer(Clip.serializer()),
+                    clips
+                )
+            } catch (_: Exception) { null }
+
+            // Resolve music path for re-opening
+            val musicPath = musicFile?.absolutePath
+
+            // Save to local library
+            val gen = Generation(
+                id = generationId,
+                videoName = videoName,
+                videoUri = savedFile.absolutePath,
+                status = GenerationStatus.SAVED,
+                createdAt = dateFormat.format(Date()),
+                userId = userId,
+                takesJson = takesJson,
+                musicPath = musicPath
+            )
+            GenerationService.saveGenerationLocal(context, gen)
+
             onStatusUpdate(GenerationStatus.SAVED)
             onProgress("Video saved!")
 
-            // Send notification
             NotificationService.notifyVideoReady(context, videoName)
 
             return generationId

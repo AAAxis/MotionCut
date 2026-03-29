@@ -7,29 +7,17 @@
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleShortVersionString</key>
-<<<<<<< Updated upstream
-	<string>2.0</string>
-	<key>CFBundleVersion</key>
-	<string>6</string>
-=======
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>$(CURRENT_PROJECT_VERSION)</string>
->>>>>>> Stashed changes
+	<string>7</string>
 	<key>CFBundleName</key>
 	<string>CreatorAI</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSExceptionDomains</key>
-		<dict>
-			<key>api.holylabs.net</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-			</dict>
-		</dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<false/>
 	</dict>
 	<key>NSUserTrackingUsageDescription</key>
 	<string>This helps us understand how you found CreatorAI and improve your experience.</string>
@@ -57,6 +45,10 @@
 		<key>UIColorName</key>
 		<string>LaunchScreenBackground</string>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -66,6 +58,16 @@
 			</array>
 			<key>CFBundleURLName</key>
 			<string>Auth callback</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+		</dict>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.918788275830-bqst1adjdeie2jls8f2q2ql0pgdeuunc</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>Google Sign-In</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 		</dict>

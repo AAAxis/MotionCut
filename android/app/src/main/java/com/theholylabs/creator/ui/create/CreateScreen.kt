@@ -36,25 +36,50 @@ import coil.compose.AsyncImage
 import com.theholylabs.creator.AppState
 import com.theholylabs.creator.AppUiState
 import com.theholylabs.creator.BuildConfig
+import androidx.media3.common.util.UnstableApi
 import com.theholylabs.creator.models.LANGUAGES
 import com.theholylabs.creator.models.PRESET_AI_MODELS
 import com.theholylabs.creator.viewmodels.CreateMode
 import com.theholylabs.creator.viewmodels.CreateViewModel
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
+@UnstableApi
 @Composable
 fun CreateScreen(
     appState: AppState,
     uiState: AppUiState,
     onBuyCredits: () -> Unit,
     onNavigateToStatus: (String) -> Unit,
+    onEditVideo: (videoUri: String, videoName: String, takesJson: String?, musicUrl: String?, generationId: String?) -> Unit = { _, _, _, _, _ -> },
+    onSwitchToLibrary: () -> Unit = {},
     vm: CreateViewModel = viewModel()
 ) {
     val mode by vm.mode.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
     val errorMessage by vm.errorMessage.collectAsState()
+    val lastTakesJson by vm.lastTakesJson.collectAsState()
+    val lastMusicPath by vm.lastMusicPath.collectAsState()
+    val switchToLibrary by vm.switchToLibrary.collectAsState()
+
+    LaunchedEffect(switchToLibrary) {
+        if (switchToLibrary) {
+            vm.clearSwitchToLibrary()
+            onSwitchToLibrary()
+        }
+    }
+
+    // Clear stale takes data after generation (no longer auto-opening editor)
+    LaunchedEffect(lastTakesJson) {
+        if (lastTakesJson != null) {
+            vm.clearLastResult()
+        }
+    }
 
     LaunchedEffect(uiState.userId) {
         uiState.userId?.let { vm.loadAvatars(it) }
@@ -227,13 +252,6 @@ fun ReelCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus:
     }
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Describe a concept -> get a viral POV reel in seconds.",
-            fontSize = 16.sp,
-            color = Color.Gray,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
         SectionLabel("TOPIC / CONCEPT")
 
         // Combined chatbox: text field + reference video inside one container
@@ -341,8 +359,8 @@ fun ReelCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus:
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        SectionLabel("INFLUENCER / AVATAR")
-        
+        SectionLabel("AI MODEL")
+
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 8.dp)
@@ -355,39 +373,6 @@ fun ReelCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus:
                     label = model.name.split(" ").last(),
                     onClick = { vm.selectModel(model.id) }
                 )
-            }
-            
-            items(uploadedAvatars) { avatar ->
-                val isSelected = selectedId == avatar.id
-                val fullUrl = "${BuildConfig.API_BASE_URL}${avatar.url}"
-                AvatarThumbnail(
-                    isSelected = isSelected,
-                    imageUrl = fullUrl,
-                    label = "My photo",
-                    onClick = { vm.selectModel(avatar.id, fullUrl) }
-                )
-            }
-            
-            item {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .width(80.dp)
-                        .clickable { photoPickerLauncher.launch("image/*") }
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(70.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1C1C1E))
-                            .border(1.dp, Color(0xFF3A3A3C), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, tint = Color(0xFFFF9500), modifier = Modifier.size(32.dp))
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Add yours", fontSize = 11.sp, color = Color.Gray)
-                }
             }
         }
 
@@ -407,7 +392,8 @@ fun ReelCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus:
             } else {
                 Icon(Icons.Default.Bolt, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Generate Reel · 10 credits", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                val reelCost = remember(selectedId) { vm.getSelectedModelCost() }
+                Text("Generate Reel \u00b7 $reelCost credits", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
         }
     }
@@ -449,50 +435,36 @@ fun AvatarThumbnail(isSelected: Boolean, imageUrl: String, label: String, onClic
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+@UnstableApi
 @Composable
 fun AdCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus: (String) -> Unit) {
     val url by vm.adURL.collectAsState()
     val prompt by vm.adPrompt.collectAsState()
     val selectedLang by vm.adLanguage.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
-    
+    val adSource by vm.adVideoSource.collectAsState()
+    val progress by vm.generationProgress.collectAsState()
+
     Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "Paste a link, add your direction, get a video ad.",
-            fontSize = 16.sp,
-            color = Color.Gray,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
 
-        SectionLabel("WEBSITE OR PRODUCT URL")
-        
-        OutlinedTextField(
-            value = url,
-            onValueChange = { vm.adURL.value = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("https://example.com/product", color = Color.DarkGray) },
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color(0xFF1C1C1E),
-                unfocusedContainerColor = Color(0xFF1C1C1E),
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                focusedIndicatorColor = Color(0xFF3A3A3C),
-                unfocusedIndicatorColor = Color(0xFF3A3A3C)
-            ),
-            shape = RoundedCornerShape(14.dp)
-        )
+        SectionLabel("DESCRIBE CONCEPT")
 
-        Spacer(modifier = Modifier.height(20.dp))
-
-        SectionLabel("CREATIVE DIRECTION (OPTIONAL)")
-        
         OutlinedTextField(
             value = prompt,
-            onValueChange = { vm.adPrompt.value = it },
+            onValueChange = { newValue ->
+                vm.adPrompt.value = newValue
+                // Auto-detect URLs in the text
+                val urlRegex = Regex("""https?://\S+|www\.\S+|\S+\.\w{2,}/\S*""")
+                val found = urlRegex.find(newValue)
+                if (found != null) {
+                    val detectedUrl = found.value.let { if (!it.startsWith("http")) "https://$it" else it }
+                    vm.adURL.value = detectedUrl
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(100.dp),
-            placeholder = { Text("e.g. Focus on speed, target small businesses", color = Color.DarkGray) },
+                .height(120.dp),
+            placeholder = { Text("Describe your video or paste a link\ne.g. A 30-second promo for our sneaker line https://example.com", color = Color.DarkGray) },
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color(0xFF1C1C1E),
                 unfocusedContainerColor = Color(0xFF1C1C1E),
@@ -503,11 +475,31 @@ fun AdCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus: (
             ),
             shape = RoundedCornerShape(14.dp)
         )
+
+        // Show detected URL chip
+        if (url.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color(0xFFFF9500).copy(alpha = 0.1f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Link detected: ", color = Color.Gray, fontSize = 12.sp)
+                Text(
+                    text = url.take(40) + if (url.length > 40) "..." else "",
+                    color = Color(0xFFFF9500),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
 
         Spacer(modifier = Modifier.height(20.dp))
 
         SectionLabel("VOICEOVER LANGUAGE")
-        
+
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(LANGUAGES) { lang ->
                 val isSelected = selectedLang == lang.id
@@ -528,19 +520,50 @@ fun AdCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus: (
 
         Spacer(modifier = Modifier.height(24.dp))
 
+        // Progress indicator for Stock mode
+        if (adSource == com.theholylabs.creator.viewmodels.AdVideoSource.STOCK && progress != null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+            ) {
+                Text(
+                    text = progress!!.step,
+                    fontSize = 14.sp,
+                    color = Color(0xFFFF9500),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                LinearProgressIndicator(
+                    progress = { progress!!.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp),
+                    color = Color(0xFFFF9500),
+                    trackColor = Color(0xFF1C1C1E),
+                )
+            }
+        }
+
         Button(
-            onClick = { vm.generateAd(appState, onNavigateToStatus) },
+            onClick = {
+                vm.generateFreeReel(appState, onNavigateToStatus)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
-            enabled = !isLoading,
+            enabled = !isLoading && prompt.isNotBlank(),
             shape = RoundedCornerShape(16.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9500))
         ) {
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+                if (adSource == com.theholylabs.creator.viewmodels.AdVideoSource.STOCK && progress != null) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(progress?.step ?: "Generating...", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             } else {
-                Text("Generate Video Ad · 30 credits", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                val cost = if (adSource == com.theholylabs.creator.viewmodels.AdVideoSource.STOCK) vm.STOCK_FOOTAGE_COST else vm.getSelectedModelCost()
+                Text("Generate Video \u00b7 $cost credits", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
         }
     }

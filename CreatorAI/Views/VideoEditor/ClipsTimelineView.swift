@@ -20,7 +20,9 @@ struct ClipsTimelineView: View {
         if viewModel.clips.count > 1 {
             return viewModel.clips.reduce(0) { $0 + ($1.beatDuration ?? $1.sourceDuration ?? 3.0) }
         }
-        return viewModel.duration > 0 ? viewModel.duration : (viewModel.clips.first.flatMap { $0.sourceDuration ?? $0.beatDuration } ?? 3.0)
+        // For single clip, prefer the player's reported duration (most accurate)
+        if viewModel.duration > 0 { return viewModel.duration }
+        return viewModel.clips.first.flatMap { $0.sourceDuration ?? $0.beatDuration } ?? 10.0
     }
 
     private var timelineContentWidth: CGFloat {
@@ -29,31 +31,50 @@ struct ClipsTimelineView: View {
         return max(clipsWidth, durationWidth)
     }
 
+    @State private var lastAutoScrollTime: Int = -1
+    @State private var userIsDragging = false
+
     var body: some View {
         ZStack {
-            ScrollView(.horizontal, showsIndicators: false) {
-                ScrollViewReader { proxy in
-                    VStack(alignment: .leading, spacing: 0) {
-                        timeRuler
-                        videoClipsRow
-                        if viewModel.selectedMusic != nil { musicWaveformRow }
-                        textTrackRow
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    ZStack(alignment: .leading) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            timeRuler
+                            videoClipsRow
+                            if viewModel.selectedMusic != nil { musicWaveformRow }
+                            textTrackRow
+                        }
+
+                        // Time markers for auto-scroll (every 0.5s)
+                        let markerCount = max(1, Int(totalDuration * 2) + 1)
+                        ForEach(0..<markerCount, id: \.self) { tick in
+                            Color.clear
+                                .frame(width: 1, height: 1)
+                                .id("time_\(tick)")
+                                .offset(x: CGFloat(Double(tick) * 0.5) * pixelsPerSecond)
+                        }
                     }
                     .padding(.leading, screenPadding)
                     .padding(.trailing, screenPadding)
                     .padding(.vertical, 6)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if viewModel.clips.count > 1 {
-                            viewModel.playAllClips()
-                        }
-                    }
-                    .onChange(of: viewModel.activeClipIndex) { newIndex in
-                        if newIndex < viewModel.clips.count {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                proxy.scrollTo(viewModel.clips[newIndex].id, anchor: .center)
-                            }
-                        }
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 5)
+                        .onChanged { _ in userIsDragging = true }
+                        .onEnded { _ in userIsDragging = true }
+                )
+                .onChange(of: viewModel.isPlaying) { playing in
+                    // Reset manual scroll when user taps play
+                    if playing { userIsDragging = false }
+                }
+                .onChange(of: viewModel.currentTime) { newTime in
+                    guard viewModel.isPlaying, !userIsDragging else { return }
+                    let tick = Int(newTime * 2)
+                    guard tick != lastAutoScrollTime else { return }
+                    lastAutoScrollTime = tick
+                    withAnimation(.linear(duration: 0.5)) {
+                        proxy.scrollTo("time_\(tick)", anchor: .center)
                     }
                 }
             }
@@ -123,6 +144,24 @@ struct ClipsTimelineView: View {
                     draggedIndex: $draggedClipIndex,
                     viewModel: viewModel
                 ))
+            }
+
+            // Add clip button at end of timeline
+            Button {
+                viewModel.showAddClipPicker = true
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(theme.surfaceElevated)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(theme.border, lineWidth: 1)
+                        )
+                    Image(systemName: "plus")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundColor(theme.primary)
+                }
+                .frame(width: 44, height: thumbHeight)
             }
         }
         .frame(height: thumbHeight)

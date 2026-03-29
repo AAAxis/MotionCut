@@ -10,43 +10,19 @@ struct AdCreatorView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
 
+    /// Extract first URL from the description text
+    private var detectedURL: String? {
+        let pattern = #"https?://[^\s]+"#
+        guard let range = viewModel.adPrompt.range(of: pattern, options: .regularExpression) else { return nil }
+        return String(viewModel.adPrompt[range])
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Paste a link, add your direction, get a video ad.")
-                .font(.system(size: 16))
-                .foregroundColor(theme.textSecondary)
-                .padding(.bottom, 24)
-
-            // URL Input
-            SectionLabel("WEBSITE OR PRODUCT URL")
-            HStack(spacing: 10) {
-                Image(systemName: "link")
-                    .font(.system(size: 18))
-                    .foregroundColor(theme.textTertiary)
-
-                TextField("https://example.com/product", text: $viewModel.adURL)
-                    .font(.system(size: 16))
-                    .foregroundColor(theme.text)
-                    .autocapitalization(.none)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 14)
-                    .fill(theme.surfaceElevated)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14)
-                            .stroke(theme.border, lineWidth: 1)
-                    )
-            )
-            .padding(.bottom, 20)
-
-            // Prompt
-            SectionLabel("CREATIVE DIRECTION (OPTIONAL)")
+            // Unified description field (auto-detects URLs like Android)
+            SectionLabel("DESCRIPTION")
             TextEditor(text: $viewModel.adPrompt)
-                .frame(minHeight: 80)
+                .frame(minHeight: 100)
                 .font(.system(size: 16))
                 .foregroundColor(theme.text)
                 .scrollContentBackground(.hidden)
@@ -62,7 +38,7 @@ struct AdCreatorView: View {
                 )
                 .overlay(alignment: .topLeading) {
                     if viewModel.adPrompt.isEmpty {
-                        Text("e.g. Focus on speed, target small businesses")
+                        Text("Describe your video or paste a product URL...")
                             .font(.system(size: 16))
                             .foregroundColor(theme.textTertiary)
                             .padding(.horizontal, 18)
@@ -70,7 +46,40 @@ struct AdCreatorView: View {
                             .allowsHitTesting(false)
                     }
                 }
-                .padding(.bottom, 20)
+                .onChange(of: viewModel.adPrompt) { newValue in
+                    // Auto-extract URL and preview
+                    if let url = detectedURL {
+                        if viewModel.adURL != url {
+                            viewModel.adURL = url
+                            Task { await viewModel.previewAdURL() }
+                        }
+                    } else {
+                        viewModel.adURL = ""
+                        viewModel.adPreview = nil
+                        viewModel.adStep = .input
+                    }
+                }
+                .padding(.bottom, 12)
+
+            // Show detected URL chip
+            if let url = detectedURL {
+                HStack(spacing: 6) {
+                    Image(systemName: "link")
+                        .font(.system(size: 12))
+                    Text(url)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .foregroundColor(theme.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(theme.primary.opacity(0.1))
+                )
+                .padding(.bottom, 16)
+            }
 
             // Voiceover Language
             SectionLabel("VOICEOVER LANGUAGE")
@@ -159,35 +168,32 @@ struct AdCreatorView: View {
                 .padding(.bottom, 24)
             }
 
-            // Action Button
+            // Generation Progress
+            if viewModel.isGeneratingFreeReel, let progress = viewModel.freeReelProgress {
+                VStack(spacing: 8) {
+                    ProgressView(value: progress.progress)
+                        .tint(theme.primary)
+                    Text(progress.step)
+                        .font(.system(size: 14))
+                        .foregroundColor(theme.textSecondary)
+                }
+                .padding(.bottom, 16)
+            }
+
+            // Generate Button (all local: script → Pexels → TTS → editor)
             Button {
                 dismissKeyboard()
                 Task {
-                    if viewModel.adStep == .input || viewModel.adPreview == nil {
-                        await viewModel.previewAdURL()
-                    } else {
-                        if let result = await viewModel.generateAd(appState: appState) {
-                            NotificationCenter.default.post(
-                                name: .navigateToGenerationStatus,
-                                object: result
-                            )
-                        }
-                    }
+                    await viewModel.generateFreeReel(appState: appState)
                 }
             } label: {
                 HStack(spacing: 8) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .tint(.white)
-                    } else if viewModel.adStep == .input || viewModel.adPreview == nil {
-                        Image(systemName: "eye")
-                            .font(.system(size: 20))
-                        Text("Preview")
-                            .font(.system(size: 17, weight: .semibold))
+                    if viewModel.isGeneratingFreeReel {
+                        ProgressView().tint(.white)
                     } else {
-                        Image(systemName: "wand.and.stars")
+                        Image(systemName: "bolt.fill")
                             .font(.system(size: 20))
-                        Text("Generate Video Ad · 30 credits")
+                        Text("Generate · 10 credits")
                             .font(.system(size: 17, weight: .semibold))
                     }
                 }
@@ -198,22 +204,9 @@ struct AdCreatorView: View {
                     RoundedRectangle(cornerRadius: 16)
                         .fill(theme.primary)
                 )
-                .opacity(viewModel.isLoading ? 0.7 : 1)
+                .opacity(viewModel.isGeneratingFreeReel ? 0.7 : 1)
             }
-            .disabled(viewModel.isLoading)
-
-            // Change URL link
-            if viewModel.adStep == .preview && viewModel.adPreview != nil {
-                Button {
-                    viewModel.resetAdPreview()
-                } label: {
-                    Text("<- Change URL")
-                        .font(.system(size: 15))
-                        .foregroundColor(theme.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 12)
-                }
-            }
+            .disabled(viewModel.isGeneratingFreeReel)
         }
     }
 }

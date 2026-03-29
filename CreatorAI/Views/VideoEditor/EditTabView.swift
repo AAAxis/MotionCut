@@ -83,32 +83,6 @@ struct EditTabView: View {
                     }
                 }
 
-                // Clip Actions
-                Divider().background(theme.border)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Clip Actions")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(theme.textSecondary)
-
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            EditActionButton(icon: "scissors", label: "Cut") {
-                                viewModel.splitClipAtPlayhead()
-                            }
-
-                            EditActionButton(icon: "doc.on.doc", label: "Duplicate") {
-                                viewModel.duplicateClip(at: viewModel.activeClipIndex)
-                            }
-
-                            if viewModel.clips.count > 1 {
-                                EditActionButton(icon: "trash", label: "Delete", isDestructive: true) {
-                                    viewModel.removeClip(at: viewModel.activeClipIndex)
-                                }
-                            }
-                        }
-                    }
-                }
             } else {
                 Text("No clip selected")
                     .font(.system(size: 15))
@@ -142,6 +116,142 @@ struct EditActionButton: View {
                 RoundedRectangle(cornerRadius: 10)
                     .fill(theme.surfaceElevated)
             )
+        }
+    }
+}
+
+// MARK: - Pexels Search Sheet
+
+struct PexelsSearchSheet: View {
+    @ObservedObject var viewModel: VideoEditorViewModel
+    @Environment(\.theme) var theme
+    @Environment(\.dismiss) var dismiss
+    @State private var hasLoaded = false
+
+    private static let preloadQueries = [
+        "cinematic nature", "city lifestyle", "business technology",
+        "people working", "modern office", "creative workspace"
+    ]
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    TextField("Search stock videos...", text: $viewModel.pexelsQuery)
+                        .font(.system(size: 16))
+                        .textFieldStyle(.plain)
+                        .submitLabel(.search)
+                        .onSubmit {
+                            Task { await viewModel.searchPexels() }
+                        }
+
+                    Button {
+                        Task { await viewModel.searchPexels() }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 40, height: 40)
+                            .background(Circle().fill(theme.primary))
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+                if viewModel.isPexelsSearching {
+                    Spacer()
+                    ProgressView("Searching...")
+                    Spacer()
+                } else if viewModel.pexelsResults.isEmpty && !hasLoaded {
+                    Spacer()
+                    ProgressView("Loading popular clips...")
+                    Spacer()
+                } else if viewModel.pexelsResults.isEmpty {
+                    Spacer()
+                    Text("No results. Try a different search.")
+                        .font(.system(size: 15))
+                        .foregroundColor(theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                    Spacer()
+                } else {
+                    Text("\(viewModel.pexelsResults.count) results")
+                        .font(.system(size: 13))
+                        .foregroundColor(theme.textTertiary)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+
+                    List(viewModel.pexelsResults, id: \.id) { video in
+                        HStack(spacing: 12) {
+                            if let thumbUrl = video.thumbnailUrl, let url = URL(string: thumbUrl) {
+                                AsyncImage(url: url) { image in
+                                    image.resizable().aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Rectangle().fill(theme.surfaceElevated)
+                                }
+                                .frame(width: 64, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(video.width)x\(video.height)")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(theme.text)
+                                Text("\(video.duration)s")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(theme.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                Task {
+                                    if viewModel.pexelsReplaceMode {
+                                        await viewModel.replaceClipFromPexels(video)
+                                    } else {
+                                        await viewModel.addClipFromPexels(video)
+                                    }
+                                }
+                            } label: {
+                                if viewModel.pexelsDownloadingId == video.id {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Image(systemName: viewModel.pexelsReplaceMode ? "arrow.triangle.2.circlepath" : "plus.circle.fill")
+                                        .font(.system(size: 22))
+                                        .foregroundColor(theme.primary)
+                                }
+                            }
+                            .disabled(viewModel.isPexelsDownloading)
+                        }
+                        .listRowBackground(theme.background)
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .background(theme.background)
+            .navigationTitle(viewModel.pexelsReplaceMode ? "Replace Clip" : "Add Stock Clip")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.primary)
+                    }
+                }
+            }
+            .task {
+                guard !hasLoaded else { return }
+                hasLoaded = true
+                if viewModel.pexelsResults.isEmpty {
+                    let query = Self.preloadQueries.randomElement()!
+                    viewModel.pexelsQuery = query
+                    await viewModel.searchPexels()
+                }
+            }
         }
     }
 }

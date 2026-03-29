@@ -456,12 +456,14 @@ actor GenerationService {
     }
 
     /// Update an existing generation by id; preserves createdAt and other fields.
-    func updateGeneration(id: String, status: GenerationStatus? = nil, videoUri: String? = nil, remoteVideoUrl: String? = nil) {
+    func updateGeneration(id: String, status: GenerationStatus? = nil, videoUri: String? = nil, remoteVideoUrl: String? = nil, takesJson: String? = nil, musicFile: String? = nil) {
         var existing = loadLocalGenerations()
         guard let idx = existing.firstIndex(where: { $0.id == id }) else { return }
         if let s = status { existing[idx].status = s }
         if let v = videoUri { existing[idx].videoUri = v }
         if let r = remoteVideoUrl { existing[idx].resultVideoUrl = r }
+        if let t = takesJson { existing[idx].takesJson = t }
+        if let m = musicFile { existing[idx].musicFile = m }
         saveGenerations(existing)
         // Sync to Supabase in background
         Task { await SupabaseService.shared.upsertGeneration(existing[idx], remoteVideoUrl: existing[idx].resultVideoUrl) }

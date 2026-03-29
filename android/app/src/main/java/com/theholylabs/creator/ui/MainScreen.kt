@@ -28,7 +28,7 @@ fun MainScreen(
     onLogout: () -> Unit,
     onPlayVideo: (String) -> Unit,
     onShareVideo: (String) -> Unit,
-    onEditVideo: (videoUri: String, videoName: String, takesJson: String?, musicUrl: String?) -> Unit = { _, _, _, _ -> }
+    onEditVideo: (videoUri: String, videoName: String, takesJson: String?, musicUrl: String?, generationId: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
     var selectedTab by remember { mutableIntStateOf(1) } // Default to "Create" to match iOS
 
@@ -86,13 +86,15 @@ fun MainScreen(
                     uiState = uiState,
                     onPlay = onPlayVideo,
                     onShare = onShareVideo,
-                    onEdit = { url, name -> onEditVideo(url, name, null, null) }
+                    onEdit = { url, name, takes, music, genId -> onEditVideo(url, name, takes, music, genId) }
                 )
                 1 -> CreateScreen(
                     appState = appState,
                     uiState = uiState,
                     onBuyCredits = onBuyCredits,
-                    onNavigateToStatus = onNavigateToStatus
+                    onNavigateToStatus = onNavigateToStatus,
+                    onEditVideo = onEditVideo,
+                    onSwitchToLibrary = { selectedTab = 0 }
                 )
                 2 -> SettingsScreen(
                     uiState = uiState,

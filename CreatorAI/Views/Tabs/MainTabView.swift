@@ -90,6 +90,7 @@ enum Route: Hashable {
     case settings
 
     struct VideoEditorParams: Hashable {
+        var generationId: String?
         var videoUri: String?
         var videoName: String?
         var takesJson: String?

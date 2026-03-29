@@ -42,6 +42,23 @@ object NotificationService {
         }
     }
 
+    fun showPushNotification(context: Context, title: String, body: String) {
+        val builder = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+
+        with(NotificationManagerCompat.from(context)) {
+            try {
+                notify(System.currentTimeMillis().toInt(), builder.build())
+            } catch (e: SecurityException) {
+                // Permission not granted
+            }
+        }
+    }
+
     fun notifyVideoFailed(context: Context, videoName: String) {
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)

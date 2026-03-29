@@ -4,7 +4,6 @@ import AVFoundation
 @MainActor
 class LibraryViewModel: ObservableObject {
     @Published var generations: [Generation] = []
-    @Published var isGridView = false
     @Published var isLoading = false
     @Published var thumbnails: [String: UIImage] = [:]
     @Published var downloadingIds: Set<String> = []
@@ -143,11 +142,29 @@ class LibraryViewModel: ObservableObject {
     }
 
     private func loadThumbnails() async {
+        let thumbDir = FileStorageService.shared.thumbnailCacheDirectory
         var newThumbnails = thumbnails
+
         for generation in generations {
+            // Skip if already loaded in memory
+            if newThumbnails[generation.id] != nil { continue }
+
+            // Check disk cache first
+            let cachedPath = thumbDir.appendingPathComponent("\(generation.id).jpg")
+            if FileManager.default.fileExists(atPath: cachedPath.path),
+               let cached = UIImage(contentsOfFile: cachedPath.path) {
+                newThumbnails[generation.id] = cached
+                continue
+            }
+
+            // Generate from video and save to disk
             guard let url = generation.videoFileURL else { continue }
             if let image = await ThumbnailService.shared.generateThumbnail(for: url) {
                 newThumbnails[generation.id] = image
+                // Cache to disk
+                if let data = image.jpegData(compressionQuality: 0.7) {
+                    try? data.write(to: cachedPath)
+                }
             }
         }
         thumbnails = newThumbnails

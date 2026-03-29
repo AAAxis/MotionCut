@@ -19,6 +19,7 @@ data class LanguageOption(
 
 val LANGUAGES = listOf(
     LanguageOption("en", "English", "US"),
+    LanguageOption("he", "Hebrew", "IL"),
     LanguageOption("ru", "Russian", "RU"),
     LanguageOption("es", "Spanish", "ES"),
     LanguageOption("de", "German", "DE"),

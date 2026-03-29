@@ -2,6 +2,7 @@ package com.theholylabs.creator.ui.editor
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -10,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -45,6 +47,7 @@ fun VideoPreviewSection(
     val clips by viewModel.clips.collectAsState()
     val activeClipIndex by viewModel.activeClipIndex.collectAsState()
     val aspectRatio by viewModel.aspectRatio.collectAsState()
+    val selectedMusic by viewModel.selectedMusic.collectAsState()
 
     val maxDimDp = 280.dp
     val density = LocalDensity.current
@@ -88,21 +91,42 @@ fun VideoPreviewSection(
                 )
             }
 
-            // Text overlay (current clip subtitle)
-            if (activeClipIndex >= 0 && activeClipIndex < clips.size) {
+            // Draggable subtitle overlay
+            val burnSubtitles by viewModel.burnSubtitles.collectAsState()
+            val subtitleY by viewModel.subtitleYPosition.collectAsState()
+
+            if (burnSubtitles && activeClipIndex >= 0 && activeClipIndex < clips.size) {
                 val text = clips[activeClipIndex].text
                 if (!text.isNullOrEmpty()) {
-                    Text(
-                        text = text,
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        textAlign = TextAlign.Center,
+                    var containerHeightPx by remember { mutableFloatStateOf(0f) }
+
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp)
-                            .offset(y = previewHeight * 0.08f)
-                    )
+                            .fillMaxSize()
+                            .onSizeChanged { containerHeightPx = it.height.toFloat() }
+                    ) {
+                        Text(
+                            text = text,
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .offset(y = previewHeight * (subtitleY - 0.5f))
+                                .background(Color.Black.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                                .pointerInput(Unit) {
+                                    detectDragGestures { _, dragAmount ->
+                                        if (containerHeightPx > 0) {
+                                            val delta = dragAmount.y / containerHeightPx
+                                            viewModel.setSubtitleYPosition(subtitleY + delta)
+                                        }
+                                    }
+                                }
+                        )
+                    }
                 }
             }
 
@@ -174,6 +198,21 @@ fun VideoPreviewSection(
             )
 
             Spacer(modifier = Modifier.weight(1f))
+
+            // Remove voiceover/music button
+            if (selectedMusic != null) {
+                IconButton(
+                    onClick = { viewModel.clearMusic() },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MusicOff,
+                        contentDescription = "Remove voiceover",
+                        tint = Color(0xFFFF9500),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))

@@ -1,5 +1,8 @@
 package com.theholylabs.creator.ui.library
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -30,7 +33,13 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import com.theholylabs.creator.AppUiState
 import com.theholylabs.creator.models.Generation
 import com.theholylabs.creator.models.GenerationStatus
+import com.theholylabs.creator.services.FileStorageService
 import com.theholylabs.creator.viewmodels.LibraryViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,19 +48,13 @@ fun LibraryScreen(
     vm: LibraryViewModel = viewModel(),
     onPlay: (String) -> Unit,
     onShare: (String) -> Unit,
-    onEdit: (videoUrl: String, videoName: String) -> Unit = { _, _ -> }
+    onEdit: (videoUrl: String, videoName: String, takesJson: String?, musicUrl: String?, generationId: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
-    val serverGenerations by vm.generations.collectAsState()
+    val generations by vm.generations.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
 
-    val generations = remember(serverGenerations, uiState.pendingGenerations) {
-        val serverIds = serverGenerations.map { it.id }.toSet()
-        val filteredPending = uiState.pendingGenerations.filter { it.id !in serverIds }
-        filteredPending + serverGenerations
-    }
-
-    LaunchedEffect(uiState.userId) {
-        uiState.userId?.let { vm.loadGenerations(it) }
+    LaunchedEffect(Unit) {
+        vm.loadGenerations()
     }
 
     val pullRefreshState = rememberPullToRefreshState()
@@ -62,18 +65,62 @@ fun LibraryScreen(
     ) {
         PullToRefreshBox(
             isRefreshing = isLoading,
-            onRefresh = { uiState.userId?.let { vm.loadGenerations(it) } },
+            onRefresh = { vm.loadGenerations() },
             state = pullRefreshState,
             modifier = Modifier.fillMaxSize()
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = "Library",
-                    fontSize = 29.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 26.dp, vertical = 16.dp)
-                )
+                val context = LocalContext.current
+                val scope = rememberCoroutineScope()
+
+                val videoImportLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.GetContent()
+                ) { uri: Uri? ->
+                    uri?.let { selectedUri ->
+                        scope.launch {
+                            val savedFile = withContext(Dispatchers.IO) {
+                                val id = UUID.randomUUID().toString()
+                                val dest = File(FileStorageService.savedVideosDir, "$id.mp4")
+                                context.contentResolver.openInputStream(selectedUri)?.use { input ->
+                                    dest.outputStream().use { output -> input.copyTo(output) }
+                                }
+                                if (dest.exists() && dest.length() > 0) dest else null
+                            }
+                            savedFile?.let {
+                                onEdit(it.absolutePath, it.nameWithoutExtension, null, null, null)
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 26.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Library",
+                        fontSize = 29.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Button(
+                        onClick = { videoImportLauncher.launch("video/*") },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFFF9500).copy(alpha = 0.12f),
+                            contentColor = Color(0xFFFF9500)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.height(36.dp),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Import", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
 
                 if (isLoading && generations.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -135,7 +182,7 @@ fun GenerationsList(
     userId: String,
     onPlay: (String) -> Unit,
     onShare: (String) -> Unit,
-    onEdit: (videoUrl: String, videoName: String) -> Unit = { _, _ -> }
+    onEdit: (videoUrl: String, videoName: String, takesJson: String?, musicUrl: String?, generationId: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
     LazyColumn(
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -143,40 +190,11 @@ fun GenerationsList(
         modifier = Modifier.fillMaxSize()
     ) {
         items(generations, key = { it.id }) { gen ->
-            val dismissState = rememberSwipeToDismissBoxState(
-                confirmValueChange = {
-                    if (it == SwipeToDismissBoxValue.EndToStart) {
-                        vm.deleteGeneration(gen.id, userId)
-                        true
-                    } else false
-                }
-            )
-
-            SwipeToDismissBox(
-                state = dismissState,
-                backgroundContent = {
-                    val color = if (dismissState.dismissDirection == SwipeToDismissBoxValue.EndToStart) Color.Red else Color.Transparent
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(color)
-                            .padding(horizontal = 20.dp),
-                        contentAlignment = Alignment.CenterEnd
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
-                    }
-                },
-                enableDismissFromStartToEnd = false,
-                content = {
-                    GenerationListItem(
-                        gen = gen,
-                        onDelete = { vm.deleteGeneration(gen.id, userId) },
-                        onPlay = { if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) gen.resultVideoUrl?.let(onPlay) },
-                        onShare = { gen.resultVideoUrl?.let(onShare) },
-                        onEdit = { if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) gen.resultVideoUrl?.let { onEdit(it, gen.videoName) } }
-                    )
-                }
+            GenerationListItem(
+                gen = gen,
+                onDelete = { vm.deleteGeneration(gen.id) },
+                onTap = { if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) (gen.resultVideoUrl ?: gen.videoUri)?.let { onEdit(it, gen.videoName, gen.takesJson, gen.musicPath, gen.id) } },
+                onShare = { (gen.resultVideoUrl ?: gen.videoUri)?.let(onShare) }
             )
         }
     }
@@ -186,9 +204,8 @@ fun GenerationsList(
 fun GenerationListItem(
     gen: Generation,
     onDelete: () -> Unit,
-    onPlay: () -> Unit,
-    onShare: () -> Unit,
-    onEdit: () -> Unit = {}
+    onTap: () -> Unit,
+    onShare: () -> Unit
 ) {
     val context = LocalContext.current
     Row(
@@ -196,7 +213,7 @@ fun GenerationListItem(
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF1C1C1E))
-            .clickable(onClick = onPlay)
+            .clickable(onClick = onTap)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -213,10 +230,10 @@ fun GenerationListItem(
                     strokeWidth = 2.dp,
                     color = Color(0xFFFF9500)
                 )
-            } else if (gen.resultVideoUrl != null) {
+            } else if ((gen.resultVideoUrl ?: gen.videoUri) != null) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(gen.resultVideoUrl)
+                        .data(gen.resultVideoUrl ?: gen.videoUri)
                         .videoFrameMillis(500)
                         .decoderFactory { result, options, _ -> VideoFrameDecoder(result.source, options) }
                         .crossfade(true)
@@ -226,10 +243,10 @@ fun GenerationListItem(
                     modifier = Modifier.fillMaxSize()
                 )
                 Icon(
-                    imageVector = Icons.Default.PlayCircle,
+                    imageVector = Icons.Default.Edit,
                     contentDescription = null,
                     tint = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             } else {
                 Icon(
@@ -258,18 +275,12 @@ fun GenerationListItem(
             )
         }
 
-        if (gen.status != GenerationStatus.PROCESSING) {
-            StatusBadge(status = gen.status)
-        }
-
-        if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) {
-            IconButton(onClick = onEdit) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFFFF9500))
-            }
-        }
-
         IconButton(onClick = onShare) {
             Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.Gray)
+        }
+
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Gray)
         }
     }
 }

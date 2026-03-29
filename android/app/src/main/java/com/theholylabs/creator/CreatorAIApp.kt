@@ -3,6 +3,7 @@ package com.theholylabs.creator
 import android.app.Application
 import com.theholylabs.creator.services.AppsFlyerService
 import com.theholylabs.creator.services.FileStorageService
+import com.theholylabs.creator.services.LocalTTSService
 import com.theholylabs.creator.services.PurchaseService
 
 class CreatorAIApp : Application() {
@@ -18,6 +19,9 @@ class CreatorAIApp : Application() {
 
         // Initialize file storage directories
         FileStorageService.initialize(this)
+
+        // Initialize TTS engine for free video generation
+        LocalTTSService.initialize(this)
 
         // Create notification channel
         com.theholylabs.creator.services.NotificationService.createNotificationChannel(this)

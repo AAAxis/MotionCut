@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import PhotosUI
 
 struct VideoEditorView: View {
     let params: VideoEditorParams
@@ -7,60 +8,100 @@ struct VideoEditorView: View {
     @Environment(\.dismiss) var dismiss
     @StateObject private var viewModel: VideoEditorViewModel
 
+    @State private var showSubsSheet = false
+    @State private var showMusicFilePicker = false
+    @State private var showGalleryPicker = false
+    @State private var selectedVideoItem: PhotosPickerItem?
+    @State private var isImportingClip = false
+
     init(params: VideoEditorParams) {
         self.params = params
         self._viewModel = StateObject(wrappedValue: VideoEditorViewModel(params: params))
     }
 
     var body: some View {
-        ZStack {
-            VStack(spacing: 0) {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 0) {
-                        VideoPreviewView(viewModel: viewModel)
-
-                        ClipsTimelineView(viewModel: viewModel)
-
-                        EditorTabBar(activeTab: $viewModel.activeTab)
-
-                        editorPanel
-                    }
-                    .padding(.bottom, 24)
+        VStack(spacing: 0) {
+            // Top bar: Close | Title | Export
+            HStack {
+                Button(action: {
+                    viewModel.autosave()
+                    dismiss()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(theme.text)
+                        .frame(width: 36, height: 36)
+                        .background(Circle().fill(theme.surfaceElevated))
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                GenerateButtonView(
-                    label: "Export",
-                    isGenerating: viewModel.isGenerating,
-                    isSaved: viewModel.isSaved
-                ) {
-                    Task { await viewModel.saveVideo() }
-                }
-                .padding(.horizontal, 26)
-                .padding(.vertical, 20)
-                .background(theme.background.shadow(color: .black.opacity(0.05), radius: 8, y: -4))
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(theme.background.ignoresSafeArea(.all))
-
-            // Minimal close button
-            VStack {
-                HStack {
-                    Spacer()
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(theme.text)
-                            .frame(width: 36, height: 36)
-                            .background(Circle().fill(theme.surfaceElevated))
-                    }
-                    .padding(.trailing, 20)
-                    .padding(.top, 12)
-                }
                 Spacer()
-            }
-            .allowsHitTesting(true)
 
+                Text(viewModel.videoName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(theme.text)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button {
+                    Task { await viewModel.saveVideo() }
+                } label: {
+                    HStack(spacing: 4) {
+                        if viewModel.isGenerating {
+                            ProgressView().scaleEffect(0.7).tint(.white)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        Text("Export")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(theme.primary)
+                    .clipShape(Capsule())
+                }
+                .disabled(viewModel.isGenerating)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 8)
+
+            // Video preview — 50% of screen height
+            VideoPreviewView(viewModel: viewModel)
+                .frame(height: UIScreen.main.bounds.height * 0.42)
+
+            // Timeline + tracks
+            ClipsTimelineView(viewModel: viewModel)
+                .frame(height: 130)
+
+            Spacer(minLength: 0)
+
+            // Bottom action bar
+            bottomActionBar
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.background.ignoresSafeArea(.all))
+        .overlay {
+            if isImportingClip || viewModel.isPexelsDownloading || viewModel.aiGenerating {
+                ZStack {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .tint(.white)
+                        Text(loadingMessage)
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                    .padding(28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(theme.surfaceElevated)
+                    )
+                }
+            }
         }
         .navigationBarHidden(true)
         .onDisappear {
@@ -74,14 +115,80 @@ struct VideoEditorView: View {
                 )
             }
         }
+        .fullScreenCover(isPresented: $viewModel.showAiPrompt) {
+            SheetWrapper(title: "AI Clip", isPresented: $viewModel.showAiPrompt) {
+                AiClipSheet(viewModel: viewModel)
+            }
+        }
+        .fileImporter(
+            isPresented: $showMusicFilePicker,
+            allowedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav, .aiff],
+            allowsMultipleSelection: false
+        ) { result in
+            if case .success(let urls) = result, let url = urls.first {
+                guard url.startAccessingSecurityScopedResource() else { return }
+                defer { url.stopAccessingSecurityScopedResource() }
+                let destURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("user-music-\(UUID().uuidString)")
+                    .appendingPathExtension(url.pathExtension)
+                try? FileManager.default.copyItem(at: url, to: destURL)
+                let trackName = url.deletingPathExtension().lastPathComponent
+                    .replacingOccurrences(of: "_", with: " ")
+                    .replacingOccurrences(of: "-", with: " ")
+                let track = MusicTrack(
+                    id: "user-\(UUID().uuidString)",
+                    name: trackName,
+                    file: destURL.absoluteString
+                )
+                Task { await viewModel.selectMusic(track) }
+            }
+        }
+        .fullScreenCover(isPresented: $showSubsSheet) {
+            SheetWrapper(title: "Subtitles", isPresented: $showSubsSheet) {
+                SubtitlesTabView(viewModel: viewModel)
+            }
+        }
+        .fullScreenCover(isPresented: $viewModel.showPexelsSheet) {
+            PexelsSearchSheet(viewModel: viewModel)
+        }
+        .photosPicker(isPresented: $showGalleryPicker, selection: $selectedVideoItem, matching: .videos)
+        .onChange(of: viewModel.showAddClipPicker) { show in
+            if show {
+                showGalleryPicker = true
+                viewModel.showAddClipPicker = false
+            }
+        }
+        .onChange(of: selectedVideoItem) { newItem in
+            guard let newItem else { return }
+            selectedVideoItem = nil
+            isImportingClip = true
+            Task {
+                defer { isImportingClip = false }
+                guard let data = try? await newItem.loadTransferable(type: Data.self) else { return }
+                let dest = FileStorageService.shared.clipCacheDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+                try? data.write(to: dest)
+                viewModel.addClipFromGallery(url: dest)
+            }
+        }
         .task {
             viewModel.configureAudioSessionForMusic()
             viewModel.rebuildPlaylistIfNeeded()
             await viewModel.preCacheClips()
 
-            guard let musicUrl = params.musicUrl, !musicUrl.isEmpty else { return }
+            guard let rawMusicUrl = params.musicUrl, !rawMusicUrl.isEmpty else { return }
 
-            let track = MusicTrack(id: "reel-music", name: "Reel Music", file: musicUrl)
+            // Resolve music path (container UUID may have changed between launches)
+            let resolvedMusic: String
+            let cleanPath = rawMusicUrl.replacingOccurrences(of: "file://", with: "")
+            if FileManager.default.fileExists(atPath: cleanPath) {
+                resolvedMusic = cleanPath
+            } else {
+                let filename = (cleanPath as NSString).lastPathComponent
+                let resolved = FileStorageService.shared.savedVideosDirectory.appendingPathComponent(filename)
+                resolvedMusic = FileManager.default.fileExists(atPath: resolved.path) ? resolved.path : rawMusicUrl
+            }
+
+            let track = MusicTrack(id: "reel-music", name: "Reel Music", file: resolvedMusic)
             viewModel.musicVolume = 0.75
             await viewModel.selectMusic(track)
 
@@ -98,15 +205,59 @@ struct VideoEditorView: View {
         }
     }
 
-    @ViewBuilder
-    private var editorPanel: some View {
-        switch viewModel.activeTab {
-        case "compress":
-            CompressTabView(viewModel: viewModel)
-        case "music":
-            MusicTabView(viewModel: viewModel)
-        default:
-            EditTabView(viewModel: viewModel)
+    // MARK: - Bottom Action Bar
+
+    private var bottomActionBar: some View {
+        HStack(spacing: 0) {
+            bottomBarButton(icon: "scissors", label: "Cut") {
+                viewModel.splitClipAtPlayhead()
+            }
+
+            bottomBarButton(icon: "arrow.triangle.2.circlepath", label: "Change") {
+                viewModel.pexelsReplaceMode = true
+                viewModel.showPexelsSheet = true
+            }
+
+            if viewModel.clips.count > 1 {
+                bottomBarButton(icon: "trash", label: "Delete", color: .red) {
+                    viewModel.removeClip(at: viewModel.activeClipIndex)
+                }
+            }
+
+            bottomBarButton(icon: "music.note", label: "Music") {
+                showMusicFilePicker = true
+            }
+
+            bottomBarButton(icon: "captions.bubble", label: "Subs") {
+                showSubsSheet = true
+            }
+
+            bottomBarButton(icon: "sparkles", label: "AI") {
+                viewModel.showAiPrompt = true
+            }
+        }
+        .padding(.vertical, 8)
+        .background(theme.surfaceElevated.shadow(color: .black.opacity(0.1), radius: 8, y: -2))
+    }
+
+    private var loadingMessage: String {
+        if isImportingClip { return "Importing video..." }
+        if viewModel.isPexelsDownloading { return "Downloading clip..." }
+        if viewModel.aiGenerating { return viewModel.aiStatus.isEmpty ? "Generating..." : viewModel.aiStatus }
+        return "Loading..."
+    }
+
+    private func bottomBarButton(icon: String, label: String, color: Color? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 20))
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(color ?? theme.text)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
         }
     }
 }

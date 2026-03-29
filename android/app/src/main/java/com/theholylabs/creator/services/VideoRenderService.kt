@@ -1,15 +1,27 @@
 package com.theholylabs.creator.services
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.text.Layout
+import android.text.StaticLayout
+import android.text.TextPaint
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.OverlaySettings
+import androidx.media3.effect.TextureOverlay
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
 import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.Transformer
+import com.google.common.collect.ImmutableList
 import com.theholylabs.creator.models.Clip
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -18,7 +30,6 @@ import java.io.File
 import java.util.UUID
 import kotlin.coroutines.resume
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.random.Random
 
 @UnstableApi
@@ -31,6 +42,8 @@ object VideoRenderService {
         musicVolume: Float = 0.5f,
         aspectRatio: String = "9:16",
         exportQuality: String = "original",
+        burnSubtitles: Boolean = false,
+        subtitleYPosition: Float = 0.80f,
         onProgress: (String) -> Unit = {}
     ): File? = withContext(Dispatchers.Main) {
         if (clips.isEmpty()) return@withContext null
@@ -39,14 +52,52 @@ object VideoRenderService {
 
         try {
             onProgress("Preparing clips...")
+            android.util.Log.d("VideoRender", "renderVideo: ${clips.size} clips, music=${musicFile?.absolutePath}, burnSubs=$burnSubtitles")
 
-            // Build edited media items for each clip
+            // Build edited media items for each clip with subtitle overlay
             val editedItems = clips.mapNotNull { clip ->
                 val uri = clip.localUri ?: clip.uri
-                if (uri.isEmpty()) return@mapNotNull null
+                if (uri.isEmpty()) {
+                    android.util.Log.w("VideoRender", "Skipping clip ${clip.id}: empty URI")
+                    return@mapNotNull null
+                }
 
+                // Verify file exists for local paths
+                if (!uri.startsWith("content://") && !uri.startsWith("http")) {
+                    val file = File(uri)
+                    if (!file.exists()) {
+                        android.util.Log.w("VideoRender", "Skipping clip ${clip.id}: file not found: $uri")
+                        return@mapNotNull null
+                    }
+                }
+
+                android.util.Log.d("VideoRender", "Clip ${clip.id}: uri=$uri, trimStart=${clip.trimStart}, trimEnd=${clip.trimEnd}, beatDur=${clip.beatDuration}, srcDur=${clip.sourceDuration}")
                 val mediaItem = buildClipMediaItem(clip, uri)
-                EditedMediaItem.Builder(mediaItem).build()
+                val builder = EditedMediaItem.Builder(mediaItem)
+
+                // Strip clip audio when music/voiceover will be mixed in
+                if (musicFile != null && musicFile.exists()) {
+                    builder.setRemoveAudio(true)
+                }
+
+                // Burn subtitle overlay if enabled and clip has text
+                if (burnSubtitles && !clip.text.isNullOrBlank()) {
+                    val subtitleBitmap = createSubtitleBitmap(clip.text, subtitleYPosition)
+                    val bitmapOverlay = BitmapOverlay.createStaticBitmapOverlay(
+                        subtitleBitmap,
+                        OverlaySettings.Builder().build()
+                    )
+                    @Suppress("UNCHECKED_CAST")
+                    val overlayEffect = OverlayEffect(ImmutableList.of(bitmapOverlay) as ImmutableList<TextureOverlay>)
+                    builder.setEffects(
+                        androidx.media3.transformer.Effects(
+                            listOf(),
+                            listOf(overlayEffect)
+                        )
+                    )
+                }
+
+                builder.build()
             }
 
             if (editedItems.isEmpty()) {
@@ -70,7 +121,14 @@ object VideoRenderService {
                 sequences.add(musicSequence)
             }
 
-            val composition = Composition.Builder(sequences).build()
+            val composition = Composition.Builder(sequences)
+                // Tone-map HDR to SDR so clips with different color spaces don't crash
+                .setHdrMode(Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_OPEN_GL)
+                // Force audio track: needed when some clips lack audio tracks.
+                // Duration is always known because reel clips have clipping endPositionMs,
+                // and non-reel clips get sourceDuration probed before export.
+                .experimentalSetForceAudioTrack(true)
+                .build()
 
             val transformer = Transformer.Builder(context)
                 .setAudioMimeType(MimeTypes.AUDIO_AAC)
@@ -89,6 +147,7 @@ object VideoRenderService {
                         exportResult: ExportResult,
                         exportException: ExportException
                     ) {
+                        android.util.Log.e("VideoRender", "Transformer export failed", exportException)
                         onProgress("Export failed: ${exportException.message}")
                         continuation.resume(null)
                     }
@@ -103,6 +162,7 @@ object VideoRenderService {
 
             result
         } catch (e: Exception) {
+            android.util.Log.e("VideoRender", "Render exception", e)
             onProgress("Render error: ${e.message}")
             null
         }
@@ -113,34 +173,92 @@ object VideoRenderService {
 
         val isReelMode = clip.beatDuration != null
         if (isReelMode) {
-            val beatDur = clip.beatDuration!!
-            val srcDur = clip.sourceDuration ?: 10.0
-            val maxStart = max(0.0, srcDur - beatDur - 0.5)
-            val startOffset = Random.nextDouble(0.0, max(0.01, maxStart))
-            val startMs = (startOffset * 1000).toLong()
-            val endMs = ((startOffset + beatDur) * 1000).toLong()
-
+            // Clip from start to beatDuration — avoids seek issues with
+            // progressive MP4s (moov atom at end) from Pexels downloads
+            val endMs = (clip.beatDuration!! * 1000).toLong()
             builder.setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder()
-                    .setStartPositionMs(startMs)
                     .setEndPositionMs(endMs)
                     .build()
             )
         } else {
             // Apply trim percentages
             val srcDur = clip.sourceDuration ?: 0.0
-            if (srcDur > 0 && (clip.trimStart > 0 || clip.trimEnd < 100)) {
+            if (srcDur > 0) {
                 val startMs = (clip.trimStart / 100.0 * srcDur * 1000).toLong()
                 val endMs = (clip.trimEnd / 100.0 * srcDur * 1000).toLong()
-                builder.setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder()
-                        .setStartPositionMs(startMs)
-                        .setEndPositionMs(endMs)
-                        .build()
-                )
+                if (startMs == 0L) {
+                    // Only set end position — always seekable from 0
+                    builder.setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder()
+                            .setEndPositionMs(endMs)
+                            .build()
+                    )
+                } else {
+                    builder.setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder()
+                            .setStartPositionMs(startMs)
+                            .setEndPositionMs(endMs)
+                            .setStartsAtKeyFrame(false)
+                            .build()
+                    )
+                }
             }
         }
 
         return builder.build()
+    }
+
+    /**
+     * Create a transparent bitmap with subtitle text at the bottom.
+     * White bold text with black outline, centered.
+     */
+    private fun createSubtitleBitmap(text: String, yPosition: Float = 0.80f): android.graphics.Bitmap {
+        val width = 1080
+        val height = 1920
+
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val textPaint = TextPaint().apply {
+            color = Color.WHITE
+            textSize = 56f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+            setShadowLayer(8f, 0f, 0f, Color.BLACK)
+        }
+
+        val outlinePaint = TextPaint().apply {
+            color = Color.BLACK
+            textSize = 56f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isAntiAlias = true
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+
+        val textWidth = (width * 0.85f).toInt()
+
+        val outlineLayout = StaticLayout.Builder.obtain(text, 0, text.length, outlinePaint, textWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setLineSpacing(4f, 1.0f)
+            .build()
+
+        val textLayout = StaticLayout.Builder.obtain(text, 0, text.length, textPaint, textWidth)
+            .setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setLineSpacing(4f, 1.0f)
+            .build()
+
+        val textHeight = textLayout.height
+        val x = (width - textWidth) / 2f
+        val y = (height * yPosition) - textHeight / 2f
+
+        canvas.save()
+        canvas.translate(x, y)
+        outlineLayout.draw(canvas)
+        textLayout.draw(canvas)
+        canvas.restore()
+
+        return bitmap
     }
 }

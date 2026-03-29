@@ -30,15 +30,12 @@ actor APIService {
 
     let baseURL: String
     
-    // Non-isolated accessor for use in synchronous contexts (e.g. AsyncImage URLs)
-    // Always use HTTPS for image loading (ATS blocks HTTP)
     nonisolated var syncBaseURL: String {
-        let base = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
-        return base.replacingOccurrences(of: "http://", with: "https://")
+        ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
     }
 
     private init() {
-        self.baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+        self.baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
     }
 
     // MARK: - Standard HTTP

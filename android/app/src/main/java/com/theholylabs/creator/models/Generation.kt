@@ -17,6 +17,8 @@ data class Generation(
     val videoUri: String? = null,
     val resultVideoUrl: String? = null,
     val status: GenerationStatus,
-    val createdAt: String, // String for now to match JSON easily
-    val userId: String? = null
+    val createdAt: String,
+    val userId: String? = null,
+    val takesJson: String? = null,
+    val musicPath: String? = null
 )

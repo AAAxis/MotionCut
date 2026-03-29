@@ -3,7 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
-    // alias(libs.plugins.google.services)  // re-enable after adding google-services.json
+    alias(libs.plugins.google.services)
 }
 
 android {
@@ -14,16 +14,16 @@ android {
         applicationId = "com.theholylabs.creator"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = 4
+        versionName = "2.0.2"
 
         // API base URL — override in local.properties or CI env
-        buildConfigField("String", "API_BASE_URL", "\"https://api.holylabs.net\"")
+        buildConfigField("String", "API_BASE_URL", "\"https://creatorai-api.polskoydm.workers.dev\"")
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file("/Users/admin/Desktop/CreatorAI_Android_Signing/release.jks")
+            storeFile = file("/Users/admin/Documents/GitHub/video-editor/android/CreatorAI_Android_Signing/release.jks")
             storePassword = "CreatorAI2024!"
             keyAlias = "upload"
             keyPassword = "CreatorAI2024!"
@@ -80,13 +80,17 @@ dependencies {
     implementation("io.coil-kt:coil-video:2.5.0")
 
     implementation(platform(libs.supabase.bom))
-    implementation(libs.supabase.gotrue)
     implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.storage)
     implementation(libs.ktor.client.okhttp)
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.play.services.auth)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.messaging)
     implementation(libs.coroutines.android)
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation(libs.appcompat)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
@@ -94,4 +98,5 @@ dependencies {
     implementation(libs.media3.effect)
     implementation(libs.media3.common)
     implementation(libs.work.runtime)
+    implementation("org.jsoup:jsoup:1.17.2")
 }

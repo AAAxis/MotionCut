@@ -6,14 +6,17 @@ struct ReelCreatorView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @State private var showLaunchCelebration = false
+    @State private var reelPreview: PagePreview?
+    @State private var lastScrapedURL: String?
+
+    private var detectedURL: String? {
+        let pattern = #"https?://[^\s]+"#
+        guard let range = viewModel.reelTopic.range(of: pattern, options: .regularExpression) else { return nil }
+        return String(viewModel.reelTopic[range])
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Describe a concept -> get a viral POV reel in seconds.")
-                .font(.system(size: 16))
-                .foregroundColor(theme.textSecondary)
-                .padding(.bottom, 24)
-
             // Topic Input
             SectionLabel("TOPIC / CONCEPT")
             VStack(alignment: .leading, spacing: 12) {
@@ -48,12 +51,101 @@ struct ReelCreatorView: View {
                             .stroke(theme.border, lineWidth: 1)
                     )
             )
-                .padding(.bottom, 20)
+            .onChange(of: viewModel.reelTopic) { _ in
+                if let url = detectedURL, url != lastScrapedURL {
+                    lastScrapedURL = url
+                    Task {
+                        reelPreview = await LocalScraperService.scrape(url: url)
+                        if let p = reelPreview {
+                            viewModel.reelScrapedContext = [p.title, p.description].compactMap { $0 }.joined(separator: ". ")
+                        }
+                    }
+                } else if detectedURL == nil {
+                    reelPreview = nil
+                    lastScrapedURL = nil
+                    viewModel.reelScrapedContext = nil
+                }
+            }
+            .padding(.bottom, 12)
 
-            // Influencer / Avatar
-            SectionLabel("INFLUENCER / AVATAR")
-            AvatarPickerView(viewModel: viewModel)
-                .padding(.bottom, 20)
+            // URL chip
+            if let url = detectedURL {
+                HStack(spacing: 6) {
+                    Image(systemName: "link")
+                        .font(.system(size: 12))
+                    Text(url)
+                        .font(.system(size: 13))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .foregroundColor(theme.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(theme.primary.opacity(0.1)))
+                .padding(.bottom, 8)
+            }
+
+            // Scraped preview card
+            if let preview = reelPreview {
+                VStack(alignment: .leading, spacing: 8) {
+                    if let ogImage = preview.ogImage, !ogImage.isEmpty, let imgURL = URL(string: ogImage) {
+                        AsyncImage(url: imgURL) { image in
+                            image.resizable().aspectRatio(contentMode: .fill).frame(height: 120).clipShape(RoundedRectangle(cornerRadius: 10))
+                        } placeholder: { EmptyView() }
+                    }
+                    if let title = preview.title {
+                        Text(title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(theme.text)
+                            .lineLimit(2)
+                    }
+                    if let desc = preview.description {
+                        Text(desc)
+                            .font(.system(size: 13))
+                            .foregroundColor(theme.textSecondary)
+                            .lineLimit(2)
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(theme.surfaceElevated)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.border, lineWidth: 1))
+                )
+                .padding(.bottom, 8)
+            }
+
+            Spacer().frame(height: 8)
+
+            // AI Model Selection
+            SectionLabel("AI MODEL")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(PRESET_AI_MODELS) { model in
+                        Button {
+                            viewModel.reelInfluencerId = model.id
+                        } label: {
+                            VStack(spacing: 8) {
+                                CachedAsyncImage(url: model.imageURL, id: model.id)
+                                    .frame(width: 64, height: 64)
+                                    .clipShape(Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(viewModel.reelInfluencerId == model.id ? theme.primary : Color.clear, lineWidth: 3)
+                                )
+
+                                Text(model.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(viewModel.reelInfluencerId == model.id ? theme.primary : theme.text)
+                                    .lineLimit(1)
+                            }
+                            .frame(width: 80)
+                        }
+                    }
+                }
+            }
+            .padding(.bottom, 20)
+
             // Generate Button
             Button {
                 dismissKeyboard()

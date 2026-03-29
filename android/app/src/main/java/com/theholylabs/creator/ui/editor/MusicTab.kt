@@ -187,21 +187,6 @@ fun MusicTab(
                 )
             }
 
-            // Extract
-            Button(
-                onClick = { /* TODO: Extract audio from video - Phase 6 enhancement */ },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF4A90D9).copy(alpha = 0.1f),
-                    contentColor = Color(0xFF4A90D9)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(vertical = 13.dp)
-            ) {
-                Icon(Icons.Default.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Extract", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
         }
 
         // Hint
@@ -217,7 +202,7 @@ fun MusicTab(
                     modifier = Modifier.size(13.dp)
                 )
                 Text(
-                    text = "Add a file or extract audio from your video clips",
+                    text = "Add a music file to your video",
                     color = Color.Gray,
                     fontSize = 13.sp
                 )

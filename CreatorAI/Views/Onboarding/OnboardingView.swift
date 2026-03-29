@@ -211,9 +211,9 @@ struct OnboardingView: View {
         Task {
             do {
                 let (idToken, nonce) = try await performAppleSignIn()
-                let session = try await SupabaseService.shared.signInWithApple(idToken: idToken, nonce: nonce)
+                let result = try await FirebaseAuthService.shared.signInWithApple(idToken: idToken, nonce: nonce)
                 await MainActor.run {
-                    appState.setAuth(token: session.accessToken, userId: session.user.id.uuidString, email: session.user.email)
+                    appState.setAuth(token: result.token, userId: result.userId, email: result.email)
                     appState.completeOnboarding()
                 }
             } catch {
@@ -231,9 +231,9 @@ struct OnboardingView: View {
         authError = nil
         Task {
             do {
-                let session = try await SupabaseService.shared.signInWithGoogle()
+                let result = try await FirebaseAuthService.shared.signInWithGoogle()
                 await MainActor.run {
-                    appState.setAuth(token: session.accessToken, userId: session.user.id.uuidString, email: session.user.email)
+                    appState.setAuth(token: result.token, userId: result.userId, email: result.email)
                     appState.completeOnboarding()
                 }
             } catch {

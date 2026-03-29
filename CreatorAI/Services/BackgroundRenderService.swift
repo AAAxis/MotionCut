@@ -2,6 +2,7 @@ import Foundation
 
 /// Parameters for a single export job (survives closing the editor).
 struct ExportParams {
+    var existingGenerationId: String?
     let videoName: String
     let clips: [Clip]
     let aspectRatio: String
@@ -64,6 +65,11 @@ final class BackgroundRenderService {
 
     /// Start export; adds a "Rendering..." row to the list and runs render in background. Returns generation id so caller can dismiss.
     func startExport(params: ExportParams) async -> String {
+        // Delete old generation if re-exporting
+        if let oldId = params.existingGenerationId {
+            await GenerationService.shared.deleteGeneration(id: oldId)
+        }
+
         let generationId = UUID().uuidString
         let generation = Generation(
             id: generationId,

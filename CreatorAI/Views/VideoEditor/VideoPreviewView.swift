@@ -2,27 +2,27 @@ import SwiftUI
 import AVKit
 import AVFoundation
 
-// MARK: - Fill-mode video player (no black bars; fills and crops to fit)
+// MARK: - Aspect-fit video player
 
-struct FillVideoPlayerView: UIViewRepresentable {
+struct AspectFitVideoPlayerView: UIViewRepresentable {
     let player: AVPlayer
 
     func makeUIView(context: Context) -> UIView {
-        let view = PlayerFillView()
+        let view = PlayerAspectFitView()
         view.player = player
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
-        (uiView as? PlayerFillView)?.player = player
+        (uiView as? PlayerAspectFitView)?.player = player
     }
 }
 
-private final class PlayerFillView: UIView {
+private final class PlayerAspectFitView: UIView {
     override static var layerClass: AnyClass { AVPlayerLayer.self }
     private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
 
-    private static let previewBackground = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+    private static let bg = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
 
     var player: AVPlayer? {
         get { playerLayer.player }
@@ -31,133 +31,140 @@ private final class PlayerFillView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = Self.previewBackground
-        playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.backgroundColor = Self.previewBackground.cgColor
+        backgroundColor = Self.bg
+        playerLayer.videoGravity = .resizeAspect
+        playerLayer.backgroundColor = Self.bg.cgColor
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        backgroundColor = Self.previewBackground
-        playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.backgroundColor = Self.previewBackground.cgColor
+        backgroundColor = Self.bg
+        playerLayer.videoGravity = .resizeAspect
+        playerLayer.backgroundColor = Self.bg.cgColor
     }
 }
 
-// MARK: - Video Preview
+// MARK: - Compact Video Preview
 
 struct VideoPreviewView: View {
     @ObservedObject var viewModel: VideoEditorViewModel
     @Environment(\.theme) var theme
 
     var body: some View {
-        VStack(spacing: 12) {
-            // Video Player
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(theme.surface)
-                    .frame(width: viewModel.videoDimensions.width, height: viewModel.videoDimensions.height)
-
-                if let player = viewModel.player {
-                    FillVideoPlayerView(player: player)
-                        .frame(width: viewModel.videoDimensions.width, height: viewModel.videoDimensions.height)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .onTapGesture {
-                            viewModel.togglePlayPause()
-                        }
-                } else {
-                    Image(systemName: "film")
-                        .font(.system(size: 40))
-                        .foregroundColor(theme.textTertiary)
+        ZStack {
+            // Video
+            if let player = viewModel.player {
+                AspectFitVideoPlayerView(player: player)
+                    .onTapGesture {
+                        viewModel.togglePlayPause()
+                    }
+            } else {
+                theme.surface
+                VStack(spacing: 12) {
+                    if !viewModel.clipsCached {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .tint(theme.textTertiary)
+                        Text("Loading video...")
+                            .font(.system(size: 14))
+                            .foregroundColor(theme.textTertiary)
+                    } else {
+                        Image(systemName: "film")
+                            .font(.system(size: 40))
+                            .foregroundColor(theme.textTertiary)
+                    }
                 }
+            }
 
-                // Text on video (current clip subtitle)
-                if viewModel.activeClipIndex >= 0,
-                   viewModel.activeClipIndex < viewModel.clips.count,
-                   let text = viewModel.clips[viewModel.activeClipIndex].text,
-                   !text.isEmpty {
+            // Subtitle overlay
+            if viewModel.activeClipIndex >= 0,
+               viewModel.activeClipIndex < viewModel.clips.count,
+               let text = viewModel.clips[viewModel.activeClipIndex].text,
+               !text.isEmpty {
+                VStack {
+                    Spacer()
                     Text(text)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.white)
                         .multilineTextAlignment(.center)
-                        .shadow(color: .black.opacity(0.9), radius: 2, x: 2, y: 2)
+                        .shadow(color: .black.opacity(0.9), radius: 2, x: 1, y: 1)
                         .padding(.horizontal, 20)
-                        .frame(width: viewModel.videoDimensions.width, height: viewModel.videoDimensions.height)
-                        .offset(y: viewModel.videoDimensions.height * 0.08)
-                }
-
-                // Play/Pause overlay
-                if !viewModel.isPlaying {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(.white.opacity(0.8))
-                        .shadow(radius: 4)
+                        .padding(.bottom, 40)
                 }
             }
 
-            // Controls Row
-            HStack(spacing: 16) {
-                // Mute Button
-                Button {
-                    viewModel.toggleMute()
-                } label: {
-                    Image(systemName: viewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(theme.textSecondary)
-                }
+            // Play/Pause overlay
+            if !viewModel.isPlaying {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 44))
+                    .foregroundColor(.white.opacity(0.8))
+                    .shadow(radius: 4)
+                    .offset(y: -30)
+            }
 
-                // Play/Pause
-                Button {
-                    viewModel.togglePlayPause()
-                } label: {
-                    Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(theme.text)
-                }
-
-                // Time Display
-                Text(formatTime(viewModel.currentTime))
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(theme.textSecondary)
-
-                Text("/")
-                    .foregroundColor(theme.textTertiary)
-
-                Text(formatTime(viewModel.duration))
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(theme.textSecondary)
-
+            // Bottom controls bar (overlaid)
+            VStack {
                 Spacer()
-            }
-            .padding(.horizontal, 20)
+                HStack(spacing: 12) {
+                    // Mute
+                    Button {
+                        viewModel.toggleMute()
+                    } label: {
+                        Image(systemName: viewModel.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                    }
 
-            // Timeline Scrubber
-            GeometryReader { geometry in
-                let progress = viewModel.duration > 0 ? viewModel.currentTime / viewModel.duration : 0
+                    // Play/Pause
+                    Button {
+                        viewModel.togglePlayPause()
+                    } label: {
+                        Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(.white)
+                    }
 
-                ZStack(alignment: .leading) {
-                    // Track
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(theme.border)
-                        .frame(height: 6)
+                    // Time
+                    Text("\(formatTime(viewModel.currentTime)) / \(formatTime(viewModel.duration))")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
 
-                    // Fill
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(theme.primary)
-                        .frame(width: max(0, geometry.size.width * CGFloat(progress)), height: 6)
-                }
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            let percentage = max(0, min(100, Double(value.location.x / geometry.size.width) * 100))
-                            viewModel.seek(to: percentage)
+                    Spacer()
+
+                    // Music off button (removes voiceover/music track)
+                    if viewModel.selectedMusic != nil {
+                        Button {
+                            viewModel.clearMusic()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "music.note.slash")
+                                    .font(.system(size: 12))
+                                Text("Music off")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(theme.primary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(.black.opacity(0.5)))
                         }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+
+                .background(.black.opacity(0.4))
+
+                // Seek slider — full width, easy to tap
+                SeekSlider(
+                    progress: viewModel.duration > 0 ? viewModel.currentTime / viewModel.duration : 0,
+                    onSeek: { pct in viewModel.seek(to: pct * 100) },
+                    accentColor: theme.primary
                 )
+                .padding(.bottom, 30)
             }
-            .frame(height: 6)
-            .padding(.horizontal, 20)
         }
-        .padding(.vertical, 16)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12)
     }
 
     private func formatTime(_ seconds: Double) -> String {
@@ -165,5 +172,53 @@ struct VideoPreviewView: View {
         let mins = Int(seconds) / 60
         let secs = Int(seconds) % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+}
+
+// MARK: - Seek Slider
+
+private struct SeekSlider: View {
+    let progress: Double
+    let onSeek: (Double) -> Void
+    let accentColor: Color
+    @State private var isSeeking = false
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                // Track background
+                Rectangle()
+                    .fill(.white.opacity(0.3))
+                    .frame(height: 4)
+
+                // Filled portion
+                Rectangle()
+                    .fill(accentColor)
+                    .frame(width: max(0, geo.size.width * CGFloat(progress)), height: 4)
+
+                // Thumb
+                Circle()
+                    .fill(.white)
+                    .frame(width: isSeeking ? 20 : 14, height: isSeeking ? 20 : 14)
+                    .shadow(radius: 2)
+                    .offset(x: max(0, geo.size.width * CGFloat(progress) - (isSeeking ? 10 : 7)))
+                    .animation(.easeOut(duration: 0.15), value: isSeeking)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isSeeking = true
+                        let pct = max(0, min(1, Double(value.location.x / geo.size.width)))
+                        onSeek(pct)
+                    }
+                    .onEnded { _ in
+                        isSeeking = false
+                    }
+            )
+        }
+        .frame(height: 36)
+        .padding(.horizontal, 16)
     }
 }

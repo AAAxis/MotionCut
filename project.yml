@@ -8,8 +8,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "2.0"
-    CURRENT_PROJECT_VERSION: 6
+    MARKETING_VERSION: "3.0"
+    CURRENT_PROJECT_VERSION: 7
     DEVELOPMENT_TEAM: LJPXXSNQZ9
 
 packages:
@@ -22,6 +22,12 @@ packages:
   AppsFlyerLib:
     url: https://github.com/AppsFlyerSDK/AppsFlyerFramework-Dynamic.git
     from: "6.15.0"
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk.git
+    from: "11.0.0"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS.git
+    from: "8.0.0"
 
 targets:
   CreatorAI:
@@ -51,3 +57,10 @@ targets:
         product: RevenueCatUI
       - package: AppsFlyerLib
         product: AppsFlyerLib-Dynamic
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseMessaging
+      - package: GoogleSignIn

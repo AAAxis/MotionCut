@@ -1,0 +1,475 @@
+/**
+ * CreatorAI Cloudflare Worker
+ *
+ * Proxies: fal.ai (video generation), Replicate (TTS/video)
+ * Direct:  Supabase (credits, users, generations, rate limits)
+ *
+ * Routes:
+ *   POST /api/auth/token         — Register/update user
+ *   POST /api/credits/get        — Get user credits
+ *   POST /api/credits/add        — Add credits (IAP)
+ *   POST /api/credits/check      — Check if enough credits
+ *   POST /api/credits/deduct     — Deduct credits
+ *   POST /api/create/generate    — Start AI video generation (fal.ai)
+ *   GET  /api/create/status/:id  — Poll generation status
+ *   GET  /health                 — Health check
+ */
+
+// ── Config ───────────────────────────────────────────────────────────
+const MODEL_CREDITS_PER_SECOND = {
+  'bytedance/seedance-1-lite': 1,
+  'bytedance/seedance-1-pro': 2,
+  'kwaivgi/kling-v2.1': 3,
+  'kwaivgi/kling-v1.6-standard': 2,
+  'minimax/video-01': 5,
+};
+
+const FREE_CREDITS = 10;
+const RATE_LIMITS = {
+  free: { dailyGenerations: 3, cooldownSeconds: 60 },
+  paid: { dailyGenerations: 50, cooldownSeconds: 10 },
+};
+
+const IAP_PRODUCTS = {
+  'credits_100': 100,
+  'credits_200': 200,
+  'credits_300': 300,
+  'com.creator.100': 100,
+  'com.creator.200': 200,
+  'com.creator.300': 300,
+};
+
+function calculateCost(modelId, duration) {
+  const perSecond = MODEL_CREDITS_PER_SECOND[modelId] || 2;
+  return Math.ceil(perSecond * duration);
+}
+
+// ── Supabase helpers ─────────────────────────────────────────────────
+async function supabase(env, method, table, options = {}) {
+  const { filter, body, select, order, single } = options;
+  let url = `${env.SUPABASE_URL}/rest/v1/${table}`;
+
+  const params = [];
+  if (filter) params.push(filter);
+  if (select) params.push(`select=${select}`);
+  if (order) params.push(`order=${order}`);
+  if (params.length) url += '?' + params.join('&');
+
+  const headers = {
+    'apikey': env.SUPABASE_SERVICE_KEY,
+    'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+    'Content-Type': 'application/json',
+    'Prefer': 'return=representation',
+  };
+
+  if (method === 'PATCH' || method === 'DELETE') {
+    // Don't override Prefer for these
+  }
+  if (options.upsert) {
+    headers['Prefer'] = 'return=representation,resolution=merge-duplicates';
+  }
+
+  const res = await fetch(url, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase ${method} ${table}: ${res.status} ${err}`);
+  }
+
+  const text = await res.text();
+  if (!text) return null;
+  const data = JSON.parse(text);
+  return single ? data[0] : data;
+}
+
+async function getUser(env, userId) {
+  const rows = await supabase(env, 'GET', 'app_users', {
+    filter: `id=eq.${userId}`,
+    select: '*',
+  });
+  return rows?.[0] || null;
+}
+
+async function upsertUser(env, data) {
+  return supabase(env, 'POST', 'app_users', { body: data, upsert: true });
+}
+
+// ── fal.ai helpers ───────────────────────────────────────────────────
+const FAL_VIDEO_MODEL = 'fal-ai/pixverse/v4/text-to-video';
+
+// All models route through fal.ai PixVerse (text-to-video)
+// or fal.ai Kling (image-to-video) since we don't have Replicate key
+const MODEL_CONFIGS = {
+  'bytedance/seedance-1-lite': {
+    fal: 'fal-ai/pixverse/v4/text-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16', quality: 'high' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16' }),
+  },
+  'bytedance/seedance-1-pro': {
+    fal: 'fal-ai/pixverse/v4/text-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16', quality: 'high' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16' }),
+  },
+  'minimax/video-01': {
+    fal: 'fal-ai/pixverse/v4/text-to-video',
+    t2v: (prompt) => ({ prompt, duration: '5', aspect_ratio: '9:16', quality: 'high' }),
+    i2v: (prompt, imageUrl) => ({ prompt, image: imageUrl, duration: '5', aspect_ratio: '9:16' }),
+  },
+  'kwaivgi/kling-v2.1': {
+    fal: 'fal-ai/pixverse/v4/text-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16', quality: 'high' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16' }),
+  },
+};
+
+async function falSubmit(env, modelId, input) {
+  const res = await fetch(`https://queue.fal.run/${modelId}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Key ${env.FAL_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
+async function falStatus(env, modelId, requestId) {
+  // fal.ai status uses the base model path (e.g., fal-ai/pixverse) not the full endpoint
+  const basePath = modelId.replace(/\/v\d+\/.*$/, '');
+  const res = await fetch(`https://queue.fal.run/${basePath}/requests/${requestId}/status`, {
+    headers: { 'Authorization': `Key ${env.FAL_KEY}` },
+  });
+  return res.json();
+}
+
+async function falResult(env, modelId, requestId) {
+  const basePath = modelId.replace(/\/v\d+\/.*$/, '');
+  const res = await fetch(`https://queue.fal.run/${basePath}/requests/${requestId}`, {
+    headers: { 'Authorization': `Key ${env.FAL_KEY}` },
+  });
+  return res.json();
+}
+
+// ── Rate limiting ────────────────────────────────────────────────────
+async function checkRateLimit(env, userId) {
+  const user = await getUser(env, userId);
+  const hasPaid = user && (user.is_subscribed || (user.credits || 0) > 10);
+  const limits = hasPaid ? RATE_LIMITS.paid : RATE_LIMITS.free;
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  let rows = await supabase(env, 'GET', 'rate_limits', {
+    filter: `user_id=eq.${userId}`,
+    select: '*',
+  });
+
+  let record = rows?.[0];
+  if (!record) {
+    await supabase(env, 'POST', 'rate_limits', {
+      body: { user_id: userId, daily_count: 0, daily_date: today },
+      upsert: true,
+    });
+    return { allowed: true, remaining: limits.dailyGenerations, limit: limits.dailyGenerations, tier: hasPaid ? 'paid' : 'free' };
+  }
+
+  let dailyCount = record.daily_count || 0;
+  if (record.daily_date !== today) {
+    dailyCount = 0;
+    await supabase(env, 'PATCH', 'rate_limits', {
+      filter: `user_id=eq.${userId}`,
+      body: { daily_count: 0, daily_date: today },
+    });
+  }
+
+  if (dailyCount >= limits.dailyGenerations) {
+    return { allowed: false, reason: 'daily_limit', message: `Daily limit reached (${limits.dailyGenerations}/day)`, limit: limits.dailyGenerations, used: dailyCount };
+  }
+
+  if (record.last_generation_at) {
+    const elapsed = (Date.now() - new Date(record.last_generation_at).getTime()) / 1000;
+    if (elapsed < limits.cooldownSeconds) {
+      return { allowed: false, reason: 'cooldown', message: `Wait ${Math.ceil(limits.cooldownSeconds - elapsed)}s`, waitSeconds: Math.ceil(limits.cooldownSeconds - elapsed) };
+    }
+  }
+
+  return { allowed: true, remaining: limits.dailyGenerations - dailyCount - 1, limit: limits.dailyGenerations, tier: hasPaid ? 'paid' : 'free' };
+}
+
+async function recordGeneration(env, userId) {
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = await supabase(env, 'GET', 'rate_limits', { filter: `user_id=eq.${userId}` });
+  if (rows?.[0]) {
+    const newCount = (rows[0].daily_date === today ? rows[0].daily_count : 0) + 1;
+    await supabase(env, 'PATCH', 'rate_limits', {
+      filter: `user_id=eq.${userId}`,
+      body: { daily_count: newCount, daily_date: today, last_generation_at: new Date().toISOString() },
+    });
+  } else {
+    await supabase(env, 'POST', 'rate_limits', {
+      body: { user_id: userId, daily_count: 1, daily_date: today, last_generation_at: new Date().toISOString() },
+      upsert: true,
+    });
+  }
+}
+
+// ── Route handlers ───────────────────────────────────────────────────
+async function handleAuth(request, env) {
+  const { externalId, email, firebaseUid, fcmToken, platform, displayName, avatarUrl } = await request.json();
+  if (!externalId) return json({ error: 'externalId required' }, 400);
+
+  await upsertUser(env, {
+    id: externalId,
+    email: email || undefined,
+    firebase_uid: firebaseUid || undefined,
+    fcm_token: fcmToken || undefined,
+    platform: platform || undefined,
+    display_name: displayName || undefined,
+    avatar_url: avatarUrl || undefined,
+  });
+
+  return json({ ok: true, userId: externalId });
+}
+
+async function handleCreditsGet(request, env) {
+  const { userId } = await request.json();
+  if (!userId) return json({ error: 'userId required' }, 400);
+
+  let user = await getUser(env, userId);
+  if (!user) {
+    await upsertUser(env, { id: userId, credits: FREE_CREDITS });
+    return json({ credits: FREE_CREDITS, isSubscribed: false });
+  }
+
+  const rateInfo = await checkRateLimit(env, userId);
+  return json({
+    credits: user.is_subscribed ? -1 : (user.credits || 0),
+    isSubscribed: user.is_subscribed || false,
+    rateLimit: rateInfo,
+  });
+}
+
+async function handleCreditsAdd(request, env) {
+  const { userId, productId, amount } = await request.json();
+  if (!userId) return json({ error: 'userId required' }, 400);
+
+  let creditsToAdd = amount;
+  if (!creditsToAdd && productId) creditsToAdd = IAP_PRODUCTS[productId];
+  if (!creditsToAdd) return json({ error: 'productId or amount required' }, 400);
+
+  let user = await getUser(env, userId);
+  const currentCredits = user?.credits || 0;
+  const newCredits = currentCredits + creditsToAdd;
+
+  await upsertUser(env, { id: userId, credits: newCredits });
+  return json({ credits: newCredits, added: creditsToAdd });
+}
+
+async function handleCreditsCheck(request, env) {
+  const { userId, modelId, duration = 5 } = await request.json();
+  if (!userId) return json({ error: 'userId required' }, 400);
+
+  const user = await getUser(env, userId);
+  if (!user) return json({ allowed: true, credits: FREE_CREDITS, cost: 0 });
+  if (user.is_subscribed) return json({ allowed: true, credits: -1, cost: 0, isSubscribed: true });
+
+  const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+  return json({ allowed: (user.credits || 0) >= cost, credits: user.credits || 0, cost });
+}
+
+async function handleCreditsDeduct(request, env) {
+  const { userId, amount, modelId, duration = 5 } = await request.json();
+  if (!userId) return json({ error: 'userId required' }, 400);
+
+  const cost = amount || calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+  const user = await getUser(env, userId);
+
+  if (user?.is_subscribed) return json({ credits: -1, isSubscribed: true, deducted: 0 });
+  if (!user || (user.credits || 0) < cost) return json({ error: 'Insufficient credits', credits: user?.credits || 0, cost }, 402);
+
+  const newCredits = (user.credits || 0) - cost;
+  await supabase(env, 'PATCH', 'app_users', {
+    filter: `id=eq.${userId}`,
+    body: { credits: newCredits },
+  });
+
+  return json({ credits: newCredits, deducted: cost });
+}
+
+async function handleCreateGenerate(request, env) {
+  const { modelId, prompt, imageUrl, duration = 5, userId } = await request.json();
+  if (!prompt) return json({ error: 'prompt is required' }, 400);
+
+  // Rate limit
+  if (userId) {
+    const rateCheck = await checkRateLimit(env, userId);
+    if (!rateCheck.allowed) return json(rateCheck, 429);
+  }
+
+  // Credit check + deduct
+  if (userId) {
+    const user = await getUser(env, userId);
+    if (user && !user.is_subscribed) {
+      const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+      if ((user.credits || 0) < cost) {
+        return json({ error: 'Insufficient credits', credits: user.credits || 0, cost }, 402);
+      }
+      await supabase(env, 'PATCH', 'app_users', {
+        filter: `id=eq.${userId}`,
+        body: { credits: (user.credits || 0) - cost },
+      });
+    }
+  }
+
+  // Pick model + build input
+  const hasImage = !!imageUrl;
+  let selectedModel = modelId;
+  let input;
+  let falModelId;
+
+  if (hasImage) {
+    if (!selectedModel || !MODEL_CONFIGS[selectedModel]?.i2v) selectedModel = 'kwaivgi/kling-v2.1';
+    const config = MODEL_CONFIGS[selectedModel];
+    input = config.i2v(prompt, imageUrl, duration);
+    falModelId = config.fal;
+  } else {
+    if (!selectedModel || !MODEL_CONFIGS[selectedModel]?.t2v) selectedModel = 'bytedance/seedance-1-lite';
+    const config = MODEL_CONFIGS[selectedModel];
+    input = config.t2v(prompt, duration);
+    falModelId = config.fal;
+  }
+
+  // Submit to fal.ai queue
+  const falResponse = await falSubmit(env, falModelId, input);
+
+  if (falResponse.detail || falResponse.error) {
+    return json({ error: falResponse.detail || falResponse.error }, 500);
+  }
+
+  const id = crypto.randomUUID();
+
+  // Save to Supabase
+  await supabase(env, 'POST', 'ai_generations', {
+    body: {
+      id,
+      user_id: userId || null,
+      model_id: selectedModel,
+      fal_model_id: falModelId,
+      fal_request_id: falResponse.request_id,
+      mode: hasImage ? 'image-to-video' : 'text-to-video',
+      prompt,
+      image_url: imageUrl || null,
+      duration,
+      status: 'processing',
+    },
+    upsert: true,
+  });
+
+  if (userId) await recordGeneration(env, userId);
+
+  return json({ success: true, id, mode: hasImage ? 'image-to-video' : 'text-to-video', model: selectedModel, status: 'processing' });
+}
+
+async function handleCreateStatus(id, env) {
+  const rows = await supabase(env, 'GET', 'ai_generations', {
+    filter: `id=eq.${id}`,
+    select: '*',
+  });
+
+  if (!rows?.length) return json({ error: 'Not found' }, 404);
+  const gen = rows[0];
+
+  // Poll fal.ai if still processing
+  if (gen.status !== 'succeeded' && gen.status !== 'failed') {
+    const status = await falStatus(env, gen.fal_model_id, gen.fal_request_id);
+
+    if (status.status === 'COMPLETED') {
+      const result = await falResult(env, gen.fal_model_id, gen.fal_request_id);
+      const outputUrl = result?.video?.url || result?.output?.url || null;
+
+      await supabase(env, 'PATCH', 'ai_generations', {
+        filter: `id=eq.${id}`,
+        body: { status: 'succeeded', output_url: outputUrl, completed_at: new Date().toISOString() },
+      });
+      gen.status = 'succeeded';
+      gen.output_url = outputUrl;
+    } else if (status.status === 'FAILED') {
+      await supabase(env, 'PATCH', 'ai_generations', {
+        filter: `id=eq.${id}`,
+        body: { status: 'failed', error: status.error || 'Generation failed', completed_at: new Date().toISOString() },
+      });
+      gen.status = 'failed';
+      gen.error = status.error;
+    }
+    // else still IN_QUEUE or IN_PROGRESS — return current status
+  }
+
+  return json({
+    id: gen.id,
+    status: gen.status,
+    mode: gen.mode,
+    model: gen.model_id,
+    prompt: gen.prompt,
+    outputUrl: gen.output_url,
+    error: gen.error,
+    duration: gen.duration,
+    createdAt: gen.created_at,
+    completedAt: gen.completed_at,
+  });
+}
+
+// ── Router ───────────────────────────────────────────────────────────
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+  });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // CORS preflight
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      });
+    }
+
+    try {
+      // Health
+      if (path === '/health') return json({ status: 'ok', time: new Date().toISOString() });
+
+      // Auth
+      if (path === '/api/auth/token' && request.method === 'POST') return handleAuth(request, env);
+
+      // Credits
+      if (path === '/api/credits/get' && request.method === 'POST') return handleCreditsGet(request, env);
+      if (path === '/api/credits/add' && request.method === 'POST') return handleCreditsAdd(request, env);
+      if (path === '/api/credits/check' && request.method === 'POST') return handleCreditsCheck(request, env);
+      if (path === '/api/credits/deduct' && request.method === 'POST') return handleCreditsDeduct(request, env);
+
+      // AI Generation (fal.ai proxy)
+      if (path === '/api/create/generate' && request.method === 'POST') return handleCreateGenerate(request, env);
+      if (path.startsWith('/api/create/status/') && request.method === 'GET') {
+        const id = path.split('/').pop();
+        return handleCreateStatus(id, env);
+      }
+
+      return json({ error: 'Not found' }, 404);
+    } catch (err) {
+      console.error('Worker error:', err);
+      return json({ error: err.message }, 500);
+    }
+  },
+};

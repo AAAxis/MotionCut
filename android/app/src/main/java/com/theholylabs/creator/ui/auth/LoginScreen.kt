@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -215,23 +216,55 @@ private fun LoginStepView(
 
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             // Google Sign In Button
+            var isSigningIn by remember { mutableStateOf(false) }
+            val buttonScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isSigningIn) 0.95f else 1f,
+                animationSpec = androidx.compose.animation.core.spring(
+                    dampingRatio = 0.4f,
+                    stiffness = 400f
+                ),
+                label = "button_scale"
+            )
+
             Button(
                 onClick = {
+                    isSigningIn = true
                     val client = AuthService.getGoogleSignInClient(activity)
                     activity.startActivityForResult(client.signInIntent, AuthService.RC_SIGN_IN)
                 },
+                enabled = !isSigningIn,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(52.dp)
+                    .graphicsLayer { scaleX = buttonScale; scaleY = buttonScale },
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = Color.White
+                    contentColor = Color.White,
+                    disabledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                    disabledContentColor = Color.White.copy(alpha = 0.7f)
                 )
             ) {
-                Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(20.dp))
+                if (isSigningIn) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(20.dp))
+                }
                 Spacer(modifier = Modifier.width(12.dp))
-                Text("Continue with Google", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (isSigningIn) "Signing in..." else "Continue with Google",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+
+            // Reset signing in state when returning from Google sign-in
+            LaunchedEffect(errorMessage) {
+                if (errorMessage != null) isSigningIn = false
             }
 
             TextButton(

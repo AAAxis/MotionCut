@@ -28,6 +28,9 @@ class VideoEditorViewModel: ObservableObject {
     /// When true, captions will be added via cloud function after export (no local caption rendering).
     @Published var addCaptionsViaCloud = false
 
+    /// Trigger gallery picker for adding a clip (set from timeline "+" button)
+    @Published var showAddClipPicker = false
+
     // Music
     @Published var selectedMusic: MusicTrack?
     @Published var musicVolume: Double = 0.5
@@ -53,6 +56,7 @@ class VideoEditorViewModel: ObservableObject {
     private var musicAVPlayer: AVPlayer?
     private var musicEndObserver: NSObjectProtocol?
     let videoName: String
+    private let generationId: String?
     private let musicUrl: String?
     private let userId: String
 
@@ -64,6 +68,7 @@ class VideoEditorViewModel: ObservableObject {
 
     init(params: VideoEditorParams) {
         self.videoName = params.videoName ?? "Video"
+        self.generationId = params.generationId
         self.musicUrl = params.musicUrl
         self.userId = params.userId
 
@@ -72,20 +77,26 @@ class VideoEditorViewModel: ObservableObject {
            let data = takesJson.data(using: .utf8),
            let takes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
             self.clips = takes.enumerated().map { (i, t) in
-                Clip(
+                let rawUri = t["uri"] as? String ?? ""
+                let resolvedUri = Self.resolveClipPath(rawUri)
+                let isLocal = !resolvedUri.hasPrefix("http://") && !resolvedUri.hasPrefix("https://")
+                return Clip(
                     id: (t["id"] as? Int) ?? (Int(Date().timeIntervalSince1970 * 1000) + i),
-                    uri: t["uri"] as? String ?? "",
+                    uri: resolvedUri,
                     name: t["name"] as? String ?? "Take \(i + 1)",
                     mimeType: t["mimeType"] as? String ?? "video/mp4",
                     trimStart: t["trimStart"] as? Double ?? 0,
                     trimEnd: t["trimEnd"] as? Double ?? 100,
                     beatDuration: t["beatDuration"] as? Double,
                     sourceDuration: t["sourceDuration"] as? Double,
-                    text: t["text"] as? String ?? ""
+                    text: t["text"] as? String ?? "",
+                    localUri: isLocal ? resolvedUri : nil
                 )
             }
         } else if let videoUri = params.videoUri {
-            self.clips = [Clip(id: 1, uri: videoUri, name: videoName)]
+            let resolved = Self.resolveClipPath(videoUri)
+            let isLocal = !resolved.hasPrefix("http://") && !resolved.hasPrefix("https://")
+            self.clips = [Clip(id: 1, uri: resolved, name: videoName, localUri: isLocal ? resolved : nil)]
         }
 
         setupPlayer()
@@ -96,6 +107,13 @@ class VideoEditorViewModel: ObservableObject {
     private func setupPlayer() {
         guard let firstClip = clips.first else { return }
         let urlString = firstClip.localUri ?? firstClip.uri
+
+        // Skip setup if the clip is a remote URL that hasn't been cached yet
+        // preCacheClips() will call rebuildPlaylistIfNeeded() after caching
+        if isRemoteURL(urlString) && firstClip.localUri == nil {
+            return
+        }
+
         guard let url = createURL(from: urlString) else { return }
 
         let playerItem = AVPlayerItem(url: url)
@@ -252,6 +270,11 @@ class VideoEditorViewModel: ObservableObject {
                         let dur = CMTimeGetSeconds(item.duration)
                         if dur.isFinite && dur > 0 {
                             self.duration = dur
+                            // Update clip sourceDuration so timeline width is correct
+                            if self.activeClipIndex >= 0, self.activeClipIndex < self.clips.count,
+                               self.clips[self.activeClipIndex].sourceDuration == nil {
+                                self.clips[self.activeClipIndex].sourceDuration = dur
+                            }
                         }
                     }
                 }
@@ -496,10 +519,18 @@ class VideoEditorViewModel: ObservableObject {
 
         configureAudioSessionForMusic()
 
-        let localURL = await AudioMixerService.shared.downloadAndSaveAudio(from: track.file, audioId: track.id)
+        // For local files, play directly with AVPlayer (no transcoding needed)
+        let localURL: URL?
+        let filePath = track.file.replacingOccurrences(of: "file://", with: "")
+        if filePath.hasPrefix("/"), FileManager.default.fileExists(atPath: filePath) {
+            localURL = URL(fileURLWithPath: filePath)
+            print("[Music] Using local file: \(filePath)")
+        } else {
+            localURL = await AudioMixerService.shared.downloadAndSaveAudio(from: track.file, audioId: track.id)
+        }
 
         guard let localURL = localURL else {
-            print("[Music] Download failed for: \(track.name)")
+            print("[Music] Failed to load: \(track.name)")
             musicLoadFailed = true
             return
         }
@@ -543,7 +574,11 @@ class VideoEditorViewModel: ObservableObject {
     func preCacheClips() async {
         guard !clipsCached else { return }
 
-        let hasRemote = clips.contains { isRemoteURL($0.uri) && $0.localUri == nil }
+        // Check if any clips actually need downloading
+        let hasRemote = clips.contains { clip in
+            let uri = clip.localUri ?? clip.uri
+            return isRemoteURL(uri) && !FileManager.default.fileExists(atPath: uri.replacingOccurrences(of: "file://", with: ""))
+        }
         guard hasRemote else {
             clipsCached = true
             return
@@ -552,9 +587,13 @@ class VideoEditorViewModel: ObservableObject {
         let storage = FileStorageService.shared
 
         for i in 0..<clips.count {
-            guard isRemoteURL(clips[i].uri), clips[i].localUri == nil else { continue }
+            let clipUri = clips[i].localUri ?? clips[i].uri
+            // Skip if already local
+            guard isRemoteURL(clipUri) else { continue }
+            // Skip if local file already exists at localUri path
+            if let localUri = clips[i].localUri, FileManager.default.fileExists(atPath: localUri.replacingOccurrences(of: "file://", with: "")) { continue }
 
-            let localPath = storage.clipCacheDirectory.appendingPathComponent("take_\(clips[i].id)_\(i).mp4")
+            let localPath = storage.savedVideosDirectory.appendingPathComponent("take_\(clips[i].id)_\(i).mp4")
             let c = clips[i]
 
             if storage.fileExists(at: localPath), let size = storage.fileSize(at: localPath), size > 0 {
@@ -577,7 +616,168 @@ class VideoEditorViewModel: ObservableObject {
         }
 
         clipsCached = true
-        rebuildPlaylistIfNeeded()
+
+        // Update generation's takesJson with local paths so next open doesn't re-download
+        if let json = serializeClipsToTakesJson(clips) {
+            // Find generation by video name and update
+            Task {
+                let gens = try? await GenerationService.shared.fetchGenerations(userId: userId)
+                if let gen = gens?.first(where: { $0.videoName == videoName }) {
+                    await GenerationService.shared.updateGeneration(id: gen.id, videoUri: clips.first?.localUri)
+                }
+            }
+        }
+
+        if isReelMode {
+            rebuildPlaylistIfNeeded()
+        } else if player == nil {
+            setupPlayer()
+        }
+    }
+
+    // MARK: - AI Clip Generation
+
+    @Published var showAiPrompt = false
+    @Published var aiPrompt = ""
+    @Published var aiGenerating = false
+    @Published var aiStatus = ""
+
+    func generateAiClip() async {
+        let prompt = aiPrompt.trimmingCharacters(in: .whitespaces)
+        guard !prompt.isEmpty else { return }
+        aiGenerating = true
+        aiStatus = "Starting AI generation..."
+        showAiPrompt = false
+
+        do {
+            let response = try await GenerationService.shared.startAICreate(
+                modelId: "fal-ai/pixverse/v4/text-to-video",
+                prompt: prompt,
+                imageUrl: nil,
+                duration: 5,
+                userId: userId
+            )
+
+            guard let genId = response.id, response.error == nil else {
+                aiStatus = response.error ?? "Failed to start"
+                aiGenerating = false
+                return
+            }
+
+            aiStatus = "Generating video..."
+            let deadline = Date().addingTimeInterval(300)
+            while Date() < deadline {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                let status = try await GenerationService.shared.pollAICreate(id: genId)
+                if status.status == "succeeded", let outputUrl = status.outputUrl {
+                    aiStatus = "Downloading clip..."
+                    let clipFile = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("ai_clip_\(UUID().uuidString).mp4")
+                    try await FileStorageService.shared.downloadFile(from: outputUrl, to: clipFile)
+
+                    let clip = Clip(
+                        id: nextClipId,
+                        uri: clipFile.path,
+                        name: "AI Clip",
+                        sourceDuration: 5.0,
+                        localUri: clipFile.path
+                    )
+                    clips.append(clip)
+                    activeClipIndex = clips.count - 1
+                    if isReelMode { rebuildPlaylistIfNeeded() } else { selectClip(at: activeClipIndex) }
+
+                    aiStatus = ""
+                    aiPrompt = ""
+                    aiGenerating = false
+                    return
+                } else if status.status == "failed" || status.status == "canceled" {
+                    aiStatus = "Generation failed"
+                    aiGenerating = false
+                    return
+                }
+            }
+            aiStatus = "Timed out"
+            aiGenerating = false
+        } catch {
+            aiStatus = "Error: \(error.localizedDescription)"
+            aiGenerating = false
+        }
+    }
+
+    // MARK: - Pexels Search & Clip Add/Replace
+
+    @Published var pexelsQuery = ""
+    @Published var pexelsResults: [PexelsVideoResult] = []
+    @Published var isPexelsSearching = false
+    @Published var showPexelsSheet = false
+    @Published var pexelsReplaceMode = false  // true = replace current clip, false = add new
+    @Published var isPexelsDownloading = false
+    @Published var pexelsDownloadingId: Int?  // id of the video being downloaded
+
+    func searchPexels() async {
+        let query = pexelsQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return }
+        isPexelsSearching = true
+        pexelsResults = await PexelsService.shared.searchVideos(query: query, perPage: 10, orientation: "portrait")
+        isPexelsSearching = false
+    }
+
+    func addClipFromPexels(_ video: PexelsVideoResult) async {
+        isPexelsDownloading = true
+        pexelsDownloadingId = video.id
+        defer { isPexelsDownloading = false; pexelsDownloadingId = nil }
+
+        let clipFile = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("pexels_\(video.id).mp4")
+        do {
+            try await FileStorageService.shared.downloadFile(from: video.videoUrl, to: clipFile)
+            let clip = Clip(
+                id: nextClipId,
+                uri: clipFile.path,
+                name: "Stock \(video.id)",
+                beatDuration: clips.first?.beatDuration,
+                sourceDuration: Double(video.duration),
+                localUri: clipFile.path
+            )
+            clips.append(clip)
+            activeClipIndex = clips.count - 1
+            showPexelsSheet = false
+            if isReelMode { rebuildPlaylistIfNeeded() } else { selectClip(at: activeClipIndex) }
+        } catch {
+            print("[Pexels] Download failed: \(error)")
+        }
+    }
+
+    func replaceClipFromPexels(_ video: PexelsVideoResult) async {
+        guard activeClipIndex >= 0, activeClipIndex < clips.count else { return }
+        isPexelsDownloading = true
+        pexelsDownloadingId = video.id
+        defer { isPexelsDownloading = false; pexelsDownloadingId = nil }
+
+        let clipFile = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("pexels_\(video.id).mp4")
+        do {
+            try await FileStorageService.shared.downloadFile(from: video.videoUrl, to: clipFile)
+            clips[activeClipIndex].uri = clipFile.path
+            clips[activeClipIndex].localUri = clipFile.path
+            clips[activeClipIndex].sourceDuration = Double(video.duration)
+            showPexelsSheet = false
+            if isReelMode { rebuildPlaylistIfNeeded() } else { selectClip(at: activeClipIndex) }
+        } catch {
+            print("[Pexels] Download failed: \(error)")
+        }
+    }
+
+    func addClipFromGallery(url: URL) {
+        let id = nextClipId
+        let dest = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        try? FileStorageService.shared.copyFile(from: url, to: dest)
+        let clip = Clip(
+            id: id,
+            uri: dest.path,
+            name: "Imported \(id)",
+            localUri: dest.path
+        )
+        clips.append(clip)
+        activeClipIndex = clips.count - 1
+        if isReelMode { rebuildPlaylistIfNeeded() } else { selectClip(at: activeClipIndex) }
     }
 
     // MARK: - Generate / Export
@@ -732,6 +932,7 @@ class VideoEditorViewModel: ObservableObject {
         }
 
         let params = ExportParams(
+            existingGenerationId: generationId,
             videoName: videoName,
             clips: renderClips,
             aspectRatio: aspectRatio,
@@ -765,6 +966,27 @@ class VideoEditorViewModel: ObservableObject {
         case "1:1", _:
             return CGSize(width: maxDim, height: maxDim)
         }
+    }
+
+    /// Resolve a clip path that may contain a stale container UUID.
+    /// Extracts the filename and looks for it in savedVideosDirectory.
+    private static func resolveClipPath(_ path: String) -> String {
+        // Remote URLs pass through
+        if path.hasPrefix("http://") || path.hasPrefix("https://") { return path }
+
+        // If the file exists at the stored path, use it
+        let cleanPath = path.replacingOccurrences(of: "file://", with: "")
+        if FileManager.default.fileExists(atPath: cleanPath) { return cleanPath }
+
+        // Extract filename and look in savedVideosDirectory
+        let filename = (cleanPath as NSString).lastPathComponent
+        let resolved = FileStorageService.shared.savedVideosDirectory.appendingPathComponent(filename)
+        if FileManager.default.fileExists(atPath: resolved.path) {
+            return resolved.path
+        }
+
+        // Return original as fallback
+        return cleanPath
     }
 
     private func isRemoteURL(_ uri: String) -> Bool {
@@ -815,6 +1037,22 @@ class VideoEditorViewModel: ObservableObject {
             p.removeTimeObserver(obs)
         }
         boundaryObserver = nil
+    }
+
+    /// Save current clip state back to the generation (autosave on dismiss)
+    func autosave() {
+        guard let genId = generationId else { return }
+        let takesJson = serializeClipsToTakesJson(clips)
+        let musicFile = selectedMusic?.file
+        Task {
+            await GenerationService.shared.updateGeneration(
+                id: genId,
+                videoUri: clips.first?.localUri ?? clips.first?.uri,
+                takesJson: takesJson,
+                musicFile: musicFile
+            )
+            print("[Editor] Autosaved generation \(genId)")
+        }
     }
 
     func cleanup() {

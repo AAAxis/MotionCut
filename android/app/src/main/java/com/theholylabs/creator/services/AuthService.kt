@@ -1,40 +1,29 @@
 package com.theholylabs.creator.services
 
-import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import io.github.jan.supabase.createSupabaseClient
-import io.github.jan.supabase.gotrue.Auth
-import io.github.jan.supabase.gotrue.auth
-import io.github.jan.supabase.gotrue.providers.Google
-import io.github.jan.supabase.gotrue.providers.builtin.IDToken
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+import kotlinx.coroutines.tasks.await
 
 /**
- * Google Sign-In (legacy GoogleSignInClient) → Supabase.
- * No Firebase / google-services.json needed — uses Web Client ID directly.
+ * Firebase Auth for sign-in + FCM.
+ * User saved directly to Supabase app_users table.
  */
 object AuthService {
 
-    private const val SUPABASE_URL = "https://uhpuqiptxcjluwsetoev.supabase.co"
-    private const val SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVocHVxaXB0eGNqbHV3c2V0b2V2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTE4OTYsImV4cCI6MjA3MjY2Nzg5Nn0.D_t-dyA4Z192kAU97Oi79At_IDT_5putusXrR0bQ6z8"
-    private const val GOOGLE_WEB_CLIENT_ID = "482450515497-ttkljbevgt6bg4sqil9hklk1vol1d0fn.apps.googleusercontent.com"
+    private const val TAG = "AuthService"
+
+    // Web client ID (client_type: 3) from google-services.json
+    private const val GOOGLE_WEB_CLIENT_ID =
+        "918788275830-d98he7rtcdo4s3pgcfbjr9bf9thh2n1g.apps.googleusercontent.com"
 
     const val RC_SIGN_IN = 9001
-
-    private val supabase by lazy {
-        createSupabaseClient(SUPABASE_URL, SUPABASE_ANON_KEY) {
-            install(Auth)
-        }
-    }
 
     data class AuthResult(
         val token: String,
@@ -50,38 +39,43 @@ object AuthService {
         return GoogleSignIn.getClient(context, gso)
     }
 
-    /**
-     * Call from Activity.onActivityResult() after the Google Sign-In intent returns.
-     * Passes the ID token to Supabase and returns AuthResult.
-     */
     suspend fun handleSignInResult(data: Intent?): AuthResult {
         val task = GoogleSignIn.getSignedInAccountFromIntent(data)
-        val account: GoogleSignInAccount = task.getResult(ApiException::class.java)
-        val idToken = account.idToken ?: throw Exception("No ID token from Google")
+        val account = task.getResult(ApiException::class.java)
+        val googleIdToken = account.idToken ?: throw Exception("No ID token from Google")
 
-        supabase.auth.signInWith(IDToken) {
-            provider = Google
-            this.idToken = idToken
-        }
+        // Sign into Firebase
+        val credential = GoogleAuthProvider.getCredential(googleIdToken, null)
+        val authResult = FirebaseAuth.getInstance()
+            .signInWithCredential(credential).await()
+        val user = authResult.user ?: throw Exception("Firebase sign-in returned no user")
 
-        val session = supabase.auth.currentSessionOrNull()
-            ?: throw Exception("No Supabase session after sign-in")
+        val token = user.getIdToken(false).await()
+            .token ?: throw Exception("No Firebase ID token")
 
-        Log.d("AuthService", "Signed in: ${session.user?.id}")
+        Log.d(TAG, "Firebase sign-in OK: uid=${user.uid} email=${user.email}")
+
+        // Save user to Supabase app_users table
+        SupabaseService.upsertUser(
+            userId = user.uid,
+            email = user.email,
+            displayName = user.displayName,
+            avatarUrl = user.photoUrl?.toString()
+        )
 
         return AuthResult(
-            token = session.accessToken,
-            userId = session.user?.id ?: throw Exception("No user ID"),
-            email = session.user?.email,
+            token = token,
+            userId = user.uid,
+            email = user.email,
         )
     }
 
     suspend fun signOut(context: Context) {
         try {
             getGoogleSignInClient(context).signOut()
-            supabase.auth.signOut()
+            FirebaseAuth.getInstance().signOut()
         } catch (e: Exception) {
-            Log.e("AuthService", "Sign out error: ${e.message}")
+            Log.e(TAG, "Sign out error: ${e.message}")
         }
     }
 }

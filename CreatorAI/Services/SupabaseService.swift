@@ -1,45 +1,63 @@
 import Foundation
 import Supabase
 
+/// Supabase client for database and storage.
+/// Auth is handled by Firebase — Supabase stores data only (same as Android).
 final class SupabaseService {
     static let shared = SupabaseService()
 
-    /// OAuth redirect URL. Add to Supabase Dashboard → Authentication → URL Configuration → Redirect URLs.
-    static let authRedirectURL = URL(string: "creatorai://auth/callback")!
+    private static let supabaseURL = "https://xxcllmzflnwzqiaslyou.supabase.co"
+    private static let supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4Y2xsbXpmbG53enFpYXNseW91Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyMDM1NDcsImV4cCI6MjA4OTc3OTU0N30.VbAv5UEC6n1ZyXFvjLshVOp9ZKN5_Rq8fEznoEqFsKY"
 
     let client: SupabaseClient
 
     private init() {
         client = SupabaseClient(
-            supabaseURL: URL(string: "https://uhpuqiptxcjluwsetoev.supabase.co")!,
-            supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVocHVxaXB0eGNqbHV3c2V0b2V2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcwOTE4OTYsImV4cCI6MjA3MjY2Nzg5Nn0.D_t-dyA4Z192kAU97Oi79At_IDT_5putusXrR0bQ6z8"
+            supabaseURL: URL(string: Self.supabaseURL)!,
+            supabaseKey: Self.supabaseAnonKey
         )
     }
 
-    // MARK: - Auth
+    // MARK: - App Users (Firebase UID + FCM token)
 
-    /// Sign in with Apple id_token from native Sign in with Apple.
-    func signInWithApple(idToken: String, nonce: String) async throws -> Session {
-        let credentials = OpenIDConnectCredentials(provider: .apple, idToken: idToken, nonce: nonce)
-        return try await client.auth.signInWithIdToken(credentials: credentials)
+    private struct AppUserRow: Encodable {
+        let id: String
+        let email: String?
+        let display_name: String?
+        let avatar_url: String?
+        let platform: String
     }
 
-    /// Sign in with Google via OAuth (opens in-app browser). Add `creatorai://auth/callback` to Supabase redirect URLs.
-    func signInWithGoogle() async throws -> Session {
-        try await client.auth.signInWithOAuth(
-            provider: .google,
-            redirectTo: Self.authRedirectURL
+    func upsertUser(userId: String, email: String?, displayName: String? = nil, avatarUrl: String? = nil) async {
+        let row = AppUserRow(
+            id: userId,
+            email: email,
+            display_name: displayName,
+            avatar_url: avatarUrl,
+            platform: "ios"
         )
+        do {
+            try await client.from("app_users").upsert(row).execute()
+            print("[Supabase] Upserted user \(userId) (\(email ?? "no email"))")
+        } catch {
+            print("[Supabase] Upsert user failed: \(error)")
+        }
     }
 
-    /// Sign out from Supabase Auth.
-    func signOut() async throws {
-        try await client.auth.signOut()
+    func saveFCMToken(userId: String, token: String) async {
+        do {
+            try await client.from("app_users")
+                .update(["fcm_token": token, "platform": "ios"])
+                .eq("id", value: userId)
+                .execute()
+            print("[Supabase] Saved FCM token for user \(userId)")
+        } catch {
+            print("[Supabase] Save FCM token failed: \(error)")
+        }
     }
 
     // MARK: - Storage
 
-    /// Upload video file to Supabase Storage. Returns the public URL.
     func uploadVideo(fileURL: URL, generationId: String) async -> String? {
         let storagePath = "renders/\(generationId).mp4"
         do {
@@ -58,7 +76,6 @@ final class SupabaseService {
         }
     }
 
-    /// Delete video from Supabase Storage.
     func deleteVideo(generationId: String) async {
         let storagePath = "renders/\(generationId).mp4"
         do {
@@ -68,9 +85,8 @@ final class SupabaseService {
         }
     }
 
-    // MARK: - Database
+    // MARK: - Database (generations table)
 
-    /// Row shape for the generations table (must match DB columns; omit any column not in schema).
     struct GenerationRow: Codable {
         let id: String
         let video_name: String
@@ -82,11 +98,9 @@ final class SupabaseService {
         let music_name: String?
         let music_volume: Double?
         let takes_json: String?
-        /// Present in fetch response only if your DB has this column; omitted from upsert to avoid PGRST204.
         let music_file: String?
     }
 
-    /// Payload for upsert: only columns that exist in your Supabase generations table.
     private struct UpsertGenerationRow: Encodable {
         let id: String
         let video_name: String
@@ -173,7 +187,6 @@ final class SupabaseService {
         }
     }
 
-    /// True when PostgREST reports the table is not in the schema cache (e.g. table not created or not exposed).
     private func isTableNotFoundError(_ error: Error) -> Bool {
         let msg = "\(error)"
         return msg.contains("Could not find the table") || msg.contains("PGRST205")

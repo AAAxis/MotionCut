@@ -63,6 +63,11 @@ async function init() {
       email TEXT,
       credits INTEGER DEFAULT 10,
       is_subscribed BOOLEAN DEFAULT false,
+      firebase_uid TEXT,
+      fcm_token TEXT,
+      platform TEXT,
+      display_name TEXT,
+      avatar_url TEXT,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
 

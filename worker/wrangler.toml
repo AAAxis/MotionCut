@@ -1,0 +1,11 @@
+name = "creatorai-api"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+[vars]
+SUPABASE_URL = "https://xxcllmzflnwzqiaslyou.supabase.co"
+
+# Secrets (set via: npx wrangler secret put FAL_KEY)
+# FAL_KEY
+# SUPABASE_ANON_KEY
+# SUPABASE_SERVICE_KEY

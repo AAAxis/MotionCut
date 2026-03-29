@@ -11,7 +11,7 @@ class SettingsViewModel: ObservableObject {
     }
 
     func loadData() async {
-        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://api.holylabs.net"
+        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
         guard let url = URL(string: "\(baseURL)/api/credits/get") else { return }
 
         var request = URLRequest(url: url)

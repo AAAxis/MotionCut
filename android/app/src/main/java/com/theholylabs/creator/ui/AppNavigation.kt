@@ -22,6 +22,13 @@ object Routes {
     const val VIDEO_EDITOR = "video_editor"
 }
 
+// Temp holder for large data that can't go through nav args
+object EditorDataHolder {
+    var takesJson: String? = null
+    var musicUrl: String? = null
+    var generationId: String? = null
+}
+
 @Composable
 fun AppNavigation(
     appState: AppState,
@@ -91,12 +98,13 @@ fun AppNavigation(
                     val encodedUrl = java.net.URLEncoder.encode(url, "UTF-8")
                     navController.navigate("video_player?url=$encodedUrl")
                 },
-                onEditVideo = { videoUri, videoName, takesJson, musicUrl ->
+                onEditVideo = { videoUri, videoName, takesJson, musicUrl, generationId ->
+                    EditorDataHolder.takesJson = takesJson
+                    EditorDataHolder.musicUrl = musicUrl
+                    EditorDataHolder.generationId = generationId
                     val encodedUri = java.net.URLEncoder.encode(videoUri, "UTF-8")
                     val encodedName = java.net.URLEncoder.encode(videoName, "UTF-8")
-                    val encodedTakes = takesJson?.let { java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
-                    val encodedMusic = musicUrl?.let { java.net.URLEncoder.encode(it, "UTF-8") } ?: ""
-                    navController.navigate("video_editor?uri=$encodedUri&name=$encodedName&takes=$encodedTakes&music=$encodedMusic")
+                    navController.navigate("video_editor?uri=$encodedUri&name=$encodedName")
                 },
                 onShareVideo = { url ->
                     val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -141,28 +149,24 @@ fun AppNavigation(
         }
 
         composable(
-            route = "video_editor?uri={uri}&name={name}&takes={takes}&music={music}",
+            route = "video_editor?uri={uri}&name={name}",
             arguments = listOf(
                 androidx.navigation.navArgument("uri") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("name") { type = androidx.navigation.NavType.StringType; defaultValue = "Video" },
-                androidx.navigation.navArgument("takes") { type = androidx.navigation.NavType.StringType; defaultValue = "" },
-                androidx.navigation.navArgument("music") { type = androidx.navigation.NavType.StringType; defaultValue = "" }
+                androidx.navigation.navArgument("name") { type = androidx.navigation.NavType.StringType; defaultValue = "Video" }
             )
         ) { backStackEntry ->
             val uri = java.net.URLDecoder.decode(backStackEntry.arguments?.getString("uri") ?: "", "UTF-8")
             val name = java.net.URLDecoder.decode(backStackEntry.arguments?.getString("name") ?: "Video", "UTF-8")
-            val takes = backStackEntry.arguments?.getString("takes")?.let {
-                if (it.isNotEmpty()) java.net.URLDecoder.decode(it, "UTF-8") else null
-            }
-            val music = backStackEntry.arguments?.getString("music")?.let {
-                if (it.isNotEmpty()) java.net.URLDecoder.decode(it, "UTF-8") else null
-            }
+            val takes = EditorDataHolder.takesJson
+            val music = EditorDataHolder.musicUrl
+            val genId = EditorDataHolder.generationId
             com.theholylabs.creator.ui.editor.VideoEditorScreen(
                 videoUri = uri,
                 videoName = name,
                 takesJson = takes,
                 musicUrl = music,
                 userId = uiState.userId,
+                generationId = genId,
                 onClose = { navController.popBackStack() }
             )
         }

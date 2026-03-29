@@ -72,6 +72,7 @@ let AD_STYLES: [StyleOption] = [
 
 let LANGUAGES: [LanguageOption] = [
     LanguageOption(id: "en", label: "English", flag: "US"),
+    LanguageOption(id: "he", label: "Hebrew", flag: "IL"),
     LanguageOption(id: "ru", label: "Russian", flag: "RU"),
     LanguageOption(id: "es", label: "Spanish", flag: "ES"),
     LanguageOption(id: "de", label: "German", flag: "DE"),
@@ -118,6 +119,7 @@ class CreateViewModel: ObservableObject {
     @Published var reelInfluencerId = "bytedance/seedance-1-lite"
     @Published var reelReferenceVideoURL: URL?
     @Published var reelAvatarImageURL: String?  // HTTPS URL of uploaded avatar for i2v
+    @Published var reelScrapedContext: String?   // Scraped page context to enrich prompt
 
     // Ad state
     @Published var adURL = ""
@@ -128,6 +130,10 @@ class CreateViewModel: ObservableObject {
     @Published var adScenes = 5
     @Published var adPreview: PagePreview?
     @Published var adStep: AdStep = .input
+
+    // Free reel (stock footage) state
+    @Published var freeReelProgress: LocalReelGenerator.GenerationProgress?
+    @Published var isGeneratingFreeReel = false
 
     // Common
     @Published var isLoading = false
@@ -165,7 +171,12 @@ class CreateViewModel: ObservableObject {
     // MARK: - Reel Generation
 
     func generateReel(appState: AppState) async -> Bool {
-        let topic = reelTopic.trimmingCharacters(in: .whitespaces)
+        var topic = reelTopic.trimmingCharacters(in: .whitespaces)
+
+        // Enrich prompt with scraped page context if available
+        if let context = reelScrapedContext, !context.isEmpty {
+            topic = "\(topic)\n\nContext: \(context)"
+        }
 
         guard !topic.isEmpty else {
             errorMessage = "Enter a topic for your reel"
@@ -238,9 +249,14 @@ class CreateViewModel: ObservableObject {
                         try await Task.sleep(nanoseconds: 5_000_000_000) // 5s
                         let status = try await GenerationService.shared.pollAICreate(id: createId)
                         if status.status == "succeeded", let outputUrl = status.outputUrl {
+                            // Download to local storage so it doesn't re-download every time
+                            let localFile = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("\(generation.id).mp4")
+                            try? await FileStorageService.shared.downloadFile(from: outputUrl, to: localFile)
+                            let localUri = FileManager.default.fileExists(atPath: localFile.path) ? localFile.path : nil
                             await GenerationService.shared.updateGeneration(
                                 id: generation.id,
                                 status: .completed,
+                                videoUri: localUri,
                                 remoteVideoUrl: outputUrl
                             )
                             return
@@ -311,19 +327,18 @@ class CreateViewModel: ObservableObject {
 
     func previewAdURL() async {
         guard !adURL.trimmingCharacters(in: .whitespaces).isEmpty else {
-            errorMessage = "Enter a URL to preview"
             return
         }
 
         isLoading = true
         errorMessage = nil
 
-        do {
-            let preview = try await GenerationService.shared.previewURL(adURL.trimmingCharacters(in: .whitespaces))
+        let preview = await LocalScraperService.scrape(url: adURL.trimmingCharacters(in: .whitespaces))
+        if let preview {
             adPreview = preview
             adStep = .preview
-        } catch {
-            errorMessage = "Couldn't read that URL."
+        } else {
+            errorMessage = nil // Silently fail — URL preview is optional
         }
 
         isLoading = false
@@ -414,6 +429,77 @@ class CreateViewModel: ObservableObject {
     func resetAdPreview() {
         adPreview = nil
         adStep = .input
+    }
+
+    // MARK: - Free Reel (Stock Footage, Local Generation)
+
+    func generateFreeReel(appState: AppState) async -> Bool {
+        let description = adPrompt.trimmingCharacters(in: .whitespaces)
+        guard !description.isEmpty else {
+            errorMessage = "Enter a description for your video"
+            return false
+        }
+
+        // Cost: 10 credits (local deduction, matches Android)
+        guard appState.credits >= 10 else {
+            showBuyCredits = true
+            return false
+        }
+
+        errorMessage = nil
+        isGeneratingFreeReel = true
+        freeReelProgress = nil
+
+        let language = adLanguage
+        let topic = description
+
+        let result = await LocalReelGenerator.generate(
+            topic: topic,
+            language: language,
+            clipCount: 6
+        ) { progress in
+            Task { @MainActor in
+                self.freeReelProgress = progress
+            }
+        }
+
+        isGeneratingFreeReel = false
+        freeReelProgress = nil
+
+        guard result.success, let generationId = result.generationId else {
+            errorMessage = result.error ?? "Generation failed"
+            return false
+        }
+
+        // Deduct credits locally
+        appState.deductCredits(10)
+
+        // Save generation and open editor
+        let generation = Generation(
+            id: generationId,
+            videoName: String(topic.prefix(40)),
+            videoUri: result.videoPath,
+            status: .saved,
+            createdAt: Date(),
+            userId: appState.userId ?? "demo-user",
+            musicFile: result.voiceoverPath,
+            takesJson: result.takesJson
+        )
+        await GenerationService.shared.saveGeneration(generation)
+
+        // Navigate to editor
+        let params = Route.VideoEditorParams(
+            videoUri: result.videoPath,
+            videoName: generation.videoName,
+            takesJson: result.takesJson,
+            musicUrl: result.voiceoverPath,
+            userId: appState.userId ?? "demo-user"
+        )
+        NotificationCenter.default.post(name: .navigateToVideoEditor, object: params)
+        NotificationCenter.default.post(name: .switchToLibraryTab, object: nil)
+
+        adPrompt = ""
+        return true
     }
 }
 

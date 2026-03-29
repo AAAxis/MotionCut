@@ -67,11 +67,17 @@ object FileStorageService {
 
         val tempFile = File(dest.parentFile, "${dest.name}.tmp")
         try {
-            URL(urlString).openStream().use { input ->
+            val conn = URL(urlString).openConnection() as java.net.HttpURLConnection
+            conn.connectTimeout = 30000
+            conn.readTimeout = 60000
+            conn.setRequestProperty("User-Agent", "CreatorAI/1.0")
+            conn.connect()
+            conn.inputStream.use { input ->
                 tempFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
+            conn.disconnect()
             moveFile(tempFile, dest)
         } catch (e: Exception) {
             tempFile.delete()

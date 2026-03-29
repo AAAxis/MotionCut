@@ -10,6 +10,7 @@ private let tabs: [EditorTab] = [
     EditorTab(id: "edit", label: "Edit", icon: "scissors"),
     EditorTab(id: "compress", label: "Quality", icon: "arrow.down.right.and.arrow.up.left"),
     EditorTab(id: "music", label: "Music", icon: "music.note"),
+    EditorTab(id: "subs", label: "Subs", icon: "captions.bubble"),
 ]
 
 struct EditorTabBar: View {

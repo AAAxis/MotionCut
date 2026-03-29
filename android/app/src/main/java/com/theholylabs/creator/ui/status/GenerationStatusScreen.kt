@@ -61,13 +61,28 @@ fun GenerationStatusScreen(
     }
 
     LaunchedEffect(generationId) {
+        // Check local status first — local generations are already complete
+        val localGens = GenerationService.loadLocalGenerations(context)
+        val localGen = localGens.find { it.id == generationId }
+        if (localGen != null && localGen.status == com.theholylabs.creator.models.GenerationStatus.COMPLETED) {
+            status = "succeeded"
+            resultUrl = localGen.resultVideoUrl ?: localGen.videoUri
+            NotificationService.notifyVideoReady(context, localGen.videoName)
+            return@LaunchedEffect
+        }
+        if (localGen != null && localGen.status == com.theholylabs.creator.models.GenerationStatus.FAILED) {
+            status = "failed"
+            return@LaunchedEffect
+        }
+
+        // Cloud generation — poll the API
         while (status == "processing" || status == "starting" || status == "queued") {
             val update = GenerationService.pollAICreate(generationId)
             if (update != null) {
                 status = update.status ?: "processing"
                 resultUrl = update.outputUrl
                 error = update.error
-                
+
                 if (status == "succeeded" && !hasNotified) {
                     NotificationService.notifyVideoReady(context, "AI Video")
                     hasNotified = true

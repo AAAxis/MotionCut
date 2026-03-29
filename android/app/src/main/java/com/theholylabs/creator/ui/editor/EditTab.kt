@@ -31,30 +31,23 @@ fun EditTab(
     val selectedClip = if (activeClipIndex in clips.indices) clips[activeClipIndex] else null
 
     Column(
-        modifier = modifier.padding(horizontal = 20.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (selectedClip != null) {
-            // Clip info header
+            // Clip info
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(
-                    imageVector = Icons.Default.Movie,
-                    contentDescription = null,
-                    tint = Color(0xFFFF9500),
-                    modifier = Modifier.size(16.dp)
-                )
-
                 val displayName = selectedClip.text?.takeIf { it.isNotEmpty() }
                     ?: selectedClip.name.takeIf { it.isNotEmpty() }
-                    ?: "Take ${activeClipIndex + 1}"
+                    ?: "Clip ${activeClipIndex + 1}"
 
                 Text(
                     text = displayName,
                     color = Color.White,
-                    fontSize = 16.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -62,95 +55,46 @@ fun EditTab(
                 )
 
                 Text(
-                    text = "Clip ${activeClipIndex + 1} of ${clips.size}",
+                    text = "${activeClipIndex + 1}/${clips.size}",
                     color = Color.Gray,
                     fontSize = 12.sp
                 )
             }
 
-            // Navigation (if multiple clips)
-            if (clips.size > 1) {
-                HorizontalDivider(color = Color(0xFF333333))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Previous
-                    TextButton(
-                        onClick = {
-                            val prev = activeClipIndex - 1
-                            if (prev >= 0) viewModel.selectClip(prev)
-                        },
-                        enabled = activeClipIndex > 0
-                    ) {
-                        Icon(
-                            Icons.Default.ChevronLeft,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text("Previous", fontSize = 14.sp)
-                    }
-
-                    // Preview All
-                    Button(
-                        onClick = { viewModel.playAllClips() },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF9500).copy(alpha = 0.1f),
-                            contentColor = Color(0xFFFF9500)
-                        ),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Preview All", fontSize = 14.sp)
-                    }
-
-                    // Next
-                    TextButton(
-                        onClick = {
-                            val next = activeClipIndex + 1
-                            if (next < clips.size) viewModel.selectClip(next)
-                        },
-                        enabled = activeClipIndex < clips.size - 1
-                    ) {
-                        Text("Next", fontSize = 14.sp)
-                        Icon(
-                            Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+            // Action chips in one row
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Navigation
+                if (clips.size > 1 && activeClipIndex > 0) {
+                    item {
+                        ActionChip(
+                            icon = Icons.Default.ChevronLeft,
+                            label = "Prev",
+                            onClick = { viewModel.selectClip(activeClipIndex - 1) }
                         )
                     }
                 }
-            }
+                if (clips.size > 1 && activeClipIndex < clips.size - 1) {
+                    item {
+                        ActionChip(
+                            icon = Icons.Default.ChevronRight,
+                            label = "Next",
+                            onClick = { viewModel.selectClip(activeClipIndex + 1) }
+                        )
+                    }
+                }
 
-            // Clip Actions
-            HorizontalDivider(color = Color(0xFF333333))
-
-            Text(
-                text = "Clip Actions",
-                color = Color.Gray,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
+                // Actions
                 item {
-                    EditActionButton(
+                    ActionChip(
                         icon = Icons.Default.ContentCut,
                         label = "Cut",
                         onClick = { viewModel.splitClipAtPlayhead() }
                     )
                 }
                 item {
-                    EditActionButton(
+                    ActionChip(
                         icon = Icons.Default.ContentCopy,
                         label = "Duplicate",
                         onClick = { viewModel.duplicateClip(activeClipIndex) }
@@ -158,11 +102,23 @@ fun EditTab(
                 }
                 if (clips.size > 1) {
                     item {
-                        EditActionButton(
+                        ActionChip(
                             icon = Icons.Default.Delete,
                             label = "Delete",
-                            isDestructive = true,
+                            color = Color(0xFFFF4444),
                             onClick = { viewModel.removeClip(activeClipIndex) }
+                        )
+                    }
+                }
+
+                // Preview all
+                if (clips.size > 1) {
+                    item {
+                        ActionChip(
+                            icon = Icons.Default.PlayArrow,
+                            label = "Preview",
+                            color = Color(0xFFFF9500),
+                            onClick = { viewModel.playAllClips() }
                         )
                     }
                 }
@@ -178,35 +134,33 @@ fun EditTab(
 }
 
 @Composable
-private fun EditActionButton(
+private fun ActionChip(
     icon: ImageVector,
     label: String,
-    isDestructive: Boolean = false,
+    color: Color = Color.White,
     onClick: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
-            .width(68.dp)
-            .height(50.dp)
-            .clip(RoundedCornerShape(10.dp))
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
             .background(Color(0xFF2A2A2A))
-            .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Icon(
             imageVector = icon,
             contentDescription = label,
-            tint = if (isDestructive) Color.Red else Color.White,
-            modifier = Modifier.size(18.dp)
+            tint = color,
+            modifier = Modifier.size(16.dp)
         )
-        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = label,
-            color = if (isDestructive) Color.Red else Color.White,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1
+            color = color,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium
         )
     }
 }

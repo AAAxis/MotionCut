@@ -6,20 +6,20 @@ struct SubtitlesTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Text on video")
+            Text("Subtitles")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(theme.text)
 
-            Text("The text below is added to each clip when you save. It comes from your reel script.")
+            Text("Edit the text for each clip. Subtitles can be burned into the video on export.")
                 .font(.system(size: 13))
                 .foregroundColor(theme.textSecondary)
 
             Toggle(isOn: $viewModel.addCaptionsViaCloud) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Add captions when exporting")
+                    Text("Burn subtitles")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(theme.text)
-                    Text("Captions will be burned in by cloud (optional)")
+                    Text("Add captions overlay when exporting")
                         .font(.system(size: 12))
                         .foregroundColor(theme.textSecondary)
                 }
@@ -43,12 +43,13 @@ struct SubtitlesTabView: View {
                                 .frame(width: 24, height: 24)
                                 .background(Circle().fill(theme.primary.opacity(0.12)))
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(clip.text?.isEmpty == false ? clip.text! : "—")
-                                    .font(.system(size: 15))
-                                    .foregroundColor(clip.text?.isEmpty == false ? theme.text : theme.textTertiary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                            TextField("Subtitle text...", text: Binding(
+                                get: { viewModel.clips[index].text ?? "" },
+                                set: { viewModel.clips[index].text = $0 }
+                            ), axis: .vertical)
+                            .font(.system(size: 15))
+                            .foregroundColor(theme.text)
+                            .lineLimit(1...4)
 
                             Spacer(minLength: 0)
                         }

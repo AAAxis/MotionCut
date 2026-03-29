@@ -68,6 +68,11 @@ class AppState(application: Application) : AndroidViewModel(application) {
             trackGeneration(it.id, it.videoName)
         }
 
+        // Register FCM token on startup if already signed in
+        if (userId != null) {
+            com.theholylabs.creator.services.FCMService.registerTokenForUser(userId)
+        }
+
         viewModelScope.launch { fetchCredits() }
     }
 
@@ -85,7 +90,14 @@ class AppState(application: Application) : AndroidViewModel(application) {
             )
         }
 
+        // Cache userId for FCM token refresh
+        prefs.edit().putString("cached_user_id", userId).apply()
+
         PurchaseService.configure(getApplication(), userId)
+
+        // Register FCM token with Supabase
+        com.theholylabs.creator.services.FCMService.registerTokenForUser(userId)
+
         viewModelScope.launch {
             // Ensure server has at least 10 credits for this user
             ensureServerCredits(userId, 10)
@@ -97,7 +109,7 @@ class AppState(application: Application) : AndroidViewModel(application) {
         storage.remove("jwt")
         storage.remove("userId")
         storage.remove("userEmail")
-        prefs.edit().putInt("user_credits", 0).apply()
+        prefs.edit().putInt("user_credits", 0).remove("cached_user_id").apply()
 
         _uiState.update {
             it.copy(
@@ -127,11 +139,9 @@ class AppState(application: Application) : AndroidViewModel(application) {
             _uiState.update { it.copy(isLoadingCredits = true) }
             try {
                 val serverCredits = fetchCreditsFromServer(userId)
-                val localCredits = _uiState.value.credits
-                android.util.Log.d("AppState", "fetchCredits: server=$serverCredits local=$localCredits userId=$userId")
-                if (serverCredits != null && serverCredits > localCredits) {
-                    // Only update if server has MORE credits (don't let server zero out local)
-                    android.util.Log.d("AppState", "fetchCredits: using server=$serverCredits")
+                android.util.Log.d("AppState", "fetchCredits: server=$serverCredits userId=$userId")
+                if (serverCredits != null) {
+                    // Always sync with server — server is source of truth
                     prefs.edit().putInt("user_credits", serverCredits).apply()
                     _uiState.update { it.copy(credits = serverCredits) }
                 }
@@ -146,6 +156,21 @@ class AppState(application: Application) : AndroidViewModel(application) {
         val updated = maxOf(0, current - amount)
         prefs.edit().putInt("user_credits", updated).apply()
         _uiState.update { it.copy(credits = updated) }
+
+        // Sync deduction to server
+        val userId = _uiState.value.userId ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = URL("${BuildConfig.API_BASE_URL}/api/credits/deduct")
+                val conn = url.openConnection() as HttpsURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                conn.outputStream.write("""{"userId":"$userId","amount":$amount}""".toByteArray())
+                conn.responseCode // trigger request
+                conn.disconnect()
+            } catch (_: Exception) {}
+        }
     }
 
     fun addCredits(amount: Int) {
@@ -176,14 +201,13 @@ class AppState(application: Application) : AndroidViewModel(application) {
 
     private suspend fun ensureServerCredits(userId: String, minCredits: Int) = withContext(Dispatchers.IO) {
         try {
-            // Check current server credits
+            // Just fetch credits — the worker auto-creates user with FREE_CREDITS if new
             val current = fetchCreditsFromServer(userId)
-            android.util.Log.d("AppState", "ensureServerCredits: current=$current min=$minCredits")
-            if (current != null && current < minCredits) {
-                // Use the check endpoint which auto-creates user with FREE_CREDITS
-                // Then try adding the difference via direct POST
-                val diff = minCredits - current
-                val url = URL("${BuildConfig.API_BASE_URL}/api/credits/add")
+            android.util.Log.d("AppState", "ensureServerCredits: current=$current")
+            // Don't add credits — server handles initial credit allocation
+            if (current == null) {
+                // Trigger user creation by calling credits/get (worker auto-creates with 10)
+                val url = URL("${BuildConfig.API_BASE_URL}/api/credits/get")
                 val conn = url.openConnection() as HttpsURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")
@@ -191,7 +215,6 @@ class AppState(application: Application) : AndroidViewModel(application) {
                 conn.connectTimeout = 5000
                 val body = JSONObject().apply {
                     put("userId", userId)
-                    put("amount", diff)
                 }.toString()
                 conn.outputStream.use { it.write(body.toByteArray()) }
                 val resp = conn.inputStream.bufferedReader().readText()
@@ -227,21 +250,64 @@ class AppState(application: Application) : AndroidViewModel(application) {
     }
 
     fun trackGeneration(generationId: String, videoName: String = "AI Video") {
+        // Skip polling if already completed locally
+        val local = com.theholylabs.creator.services.GenerationService.loadLocalGenerations(getApplication())
+        val existing = local.find { it.id == generationId }
+        if (existing?.status == com.theholylabs.creator.models.GenerationStatus.COMPLETED) return
+
         viewModelScope.launch(Dispatchers.IO) {
             var isRunning = true
             while (isRunning) {
                 val status = com.theholylabs.creator.services.GenerationService.pollAICreate(generationId)
                 when (status?.status) {
                     "succeeded" -> {
+                        // Download video locally so it survives URL expiration
+                        var localVideoUrl = status.outputUrl
+                        if (!status.outputUrl.isNullOrEmpty()) {
+                            try {
+                                val destFile = java.io.File(
+                                    com.theholylabs.creator.services.FileStorageService.savedVideosDir,
+                                    "${generationId}.mp4"
+                                )
+                                com.theholylabs.creator.services.FileStorageService.downloadFile(status.outputUrl, destFile)
+                                if (destFile.exists() && destFile.length() > 1000) {
+                                    localVideoUrl = destFile.absolutePath
+
+                                    // Also save to gallery
+                                    val contentValues = android.content.ContentValues().apply {
+                                        put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, "$videoName.mp4")
+                                        put(android.provider.MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                            put(android.provider.MediaStore.Video.Media.RELATIVE_PATH, "Movies/CreatorAI")
+                                            put(android.provider.MediaStore.Video.Media.IS_PENDING, 1)
+                                        }
+                                    }
+                                    val resolver = getApplication<android.app.Application>().contentResolver
+                                    val uri = resolver.insert(android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+                                    if (uri != null) {
+                                        resolver.openOutputStream(uri)?.use { output ->
+                                            destFile.inputStream().use { input -> input.copyTo(output) }
+                                        }
+                                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                            contentValues.clear()
+                                            contentValues.put(android.provider.MediaStore.Video.Media.IS_PENDING, 0)
+                                            resolver.update(uri, contentValues, null, null)
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                android.util.Log.e("AppState", "Failed to download generated video: ${e.message}")
+                            }
+                        }
                         com.theholylabs.creator.services.NotificationService.notifyVideoReady(getApplication(), videoName)
-                        com.theholylabs.creator.services.GenerationService.updateGenerationLocal(getApplication(), generationId, com.theholylabs.creator.models.GenerationStatus.COMPLETED, status.outputUrl)
-                        fetchCredits() // Refresh credits after success
+                        com.theholylabs.creator.services.GenerationService.updateGenerationLocal(getApplication(), generationId, com.theholylabs.creator.models.GenerationStatus.COMPLETED, localVideoUrl)
+                        fetchCredits()
                         isRunning = false
                     }
                     "failed" -> {
                         com.theholylabs.creator.services.NotificationService.notifyVideoFailed(getApplication(), videoName)
                         com.theholylabs.creator.services.GenerationService.updateGenerationLocal(getApplication(), generationId, com.theholylabs.creator.models.GenerationStatus.FAILED)
-                        fetchCredits() // Refresh credits as they might be refunded
+                        fetchCredits()
                         isRunning = false
                     }
                     else -> {

@@ -94,9 +94,6 @@ struct SettingsView: View {
                                 .padding(.bottom, 4)
                             Button {
                                 appState.logout()
-                                Task {
-                                    try? await SupabaseService.shared.signOut()
-                                }
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: "rectangle.portrait.and.arrow.right")
@@ -256,9 +253,9 @@ struct SettingsView: View {
         Task {
             do {
                 let (idToken, nonce) = try await performAppleSignIn()
-                let session = try await SupabaseService.shared.signInWithApple(idToken: idToken, nonce: nonce)
+                let result = try await FirebaseAuthService.shared.signInWithApple(idToken: idToken, nonce: nonce)
                 await MainActor.run {
-                    appState.setAuth(token: session.accessToken, userId: session.user.id.uuidString, email: session.user.email)
+                    appState.setAuth(token: result.token, userId: result.userId, email: result.email)
                     authLoading = false
                 }
             } catch {
@@ -276,9 +273,9 @@ struct SettingsView: View {
         authError = nil
         Task {
             do {
-                let session = try await SupabaseService.shared.signInWithGoogle()
+                let result = try await FirebaseAuthService.shared.signInWithGoogle()
                 await MainActor.run {
-                    appState.setAuth(token: session.accessToken, userId: session.user.id.uuidString, email: session.user.email)
+                    appState.setAuth(token: result.token, userId: result.userId, email: result.email)
                     authLoading = false
                 }
             } catch {
