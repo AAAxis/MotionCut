@@ -104,5 +104,11 @@ struct CreateView: View {
         .onAppear {
             Task { await appState.fetchCredits() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .prefillPrompt)) { notification in
+            if let prompt = notification.object as? String {
+                viewModel.mode = .reel
+                viewModel.reelTopic = prompt
+            }
+        }
     }
 }

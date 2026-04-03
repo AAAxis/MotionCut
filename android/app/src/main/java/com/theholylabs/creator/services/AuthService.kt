@@ -9,7 +9,13 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
+import com.theholylabs.creator.BuildConfig
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.URL
+import javax.net.ssl.HttpsURLConnection
 
 /**
  * Firebase Auth for sign-in + FCM.
@@ -55,8 +61,8 @@ object AuthService {
 
         Log.d(TAG, "Firebase sign-in OK: uid=${user.uid} email=${user.email}")
 
-        // Save user to Supabase app_users table
-        SupabaseService.upsertUser(
+        // Register user via Worker (uses service key to bypass Supabase RLS)
+        registerUserViaWorker(
             userId = user.uid,
             email = user.email,
             displayName = user.displayName,
@@ -68,6 +74,34 @@ object AuthService {
             userId = user.uid,
             email = user.email,
         )
+    }
+
+    private suspend fun registerUserViaWorker(
+        userId: String,
+        email: String?,
+        displayName: String?,
+        avatarUrl: String?
+    ) = withContext(Dispatchers.IO) {
+        try {
+            val url = URL("${BuildConfig.API_BASE_URL}/api/auth/token")
+            val body = JSONObject().apply {
+                put("externalId", userId)
+                put("platform", "android")
+                if (email != null) put("email", email)
+                if (displayName != null) put("displayName", displayName)
+                if (avatarUrl != null) put("avatarUrl", avatarUrl)
+            }
+            val conn = url.openConnection() as HttpsURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.doOutput = true
+            conn.outputStream.bufferedWriter().use { it.write(body.toString()) }
+            val status = conn.responseCode
+            Log.d(TAG, "Worker register user: $status")
+            conn.disconnect()
+        } catch (e: Exception) {
+            Log.e(TAG, "Worker register failed: ${e.message}")
+        }
     }
 
     suspend fun signOut(context: Context) {

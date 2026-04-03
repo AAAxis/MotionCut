@@ -1,0 +1,4 @@
+• AI Annonsverktyg — skapa virala annonser för TikTok, Reels & Shorts
+• Foto-till-Video — förvandla alla foton till AI-genererad video
+• Extrahera Ljud — hämta ljud från valfri video i fliken Musik
+• Buggfixar och prestandaförbättringar

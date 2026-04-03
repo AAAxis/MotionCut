@@ -13,7 +13,9 @@ struct ClipsTimelineView: View {
     private let textRowHeight: CGFloat = 28
     private let timeRulerHeight: CGFloat = 22
     private let minClipWidth: CGFloat = 60
-    private let pixelsPerSecond: CGFloat = 50
+    private let basePixelsPerSecond: CGFloat = 50
+    @State private var zoomScale: CGFloat = 1.0
+    private var pixelsPerSecond: CGFloat { basePixelsPerSecond * zoomScale }
     private let screenPadding: CGFloat = UIScreen.main.bounds.width / 2
 
     private var totalDuration: Double {
@@ -33,6 +35,7 @@ struct ClipsTimelineView: View {
 
     @State private var lastAutoScrollTime: Int = -1
     @State private var userIsDragging = false
+    @State private var scrollOffset: CGFloat = 0
 
     var body: some View {
         ZStack {
@@ -43,8 +46,16 @@ struct ClipsTimelineView: View {
                             timeRuler
                             videoClipsRow
                             if viewModel.selectedMusic != nil { musicWaveformRow }
+                            if viewModel.voiceoverFileURL != nil { voiceoverWaveformRow }
                             textTrackRow
                         }
+
+                        // Scroll offset tracker — inside content so it moves with scroll
+                        GeometryReader { geo in
+                            Color.clear
+                                .preference(key: ScrollOffsetKey.self, value: geo.frame(in: .named("timeline")).minX)
+                        }
+                        .frame(width: 1, height: 1)
 
                         // Time markers for auto-scroll (every 0.5s)
                         let markerCount = max(1, Int(totalDuration * 2) + 1)
@@ -59,14 +70,43 @@ struct ClipsTimelineView: View {
                     .padding(.trailing, screenPadding)
                     .padding(.vertical, 6)
                 }
+                .onPreferenceChange(ScrollOffsetKey.self) { value in
+                    // value = content leading edge relative to timeline coordinate space
+                    // When scrolled right, value becomes more negative
+                    // Subtract screenPadding since content has that leading padding
+                    let offset = -(value - screenPadding)
+                    scrollOffset = offset
+
+                    // Seek video when user is scrolling
+                    if userIsDragging {
+                        let seconds = max(0, min(Double(offset) / Double(pixelsPerSecond), totalDuration))
+                        viewModel.seekToTime(seconds)
+                    }
+                }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 5)
-                        .onChanged { _ in userIsDragging = true }
-                        .onEnded { _ in userIsDragging = true }
+                        .onChanged { _ in
+                            if !userIsDragging {
+                                userIsDragging = true
+                                viewModel.pauseForScrub()
+                            }
+                        }
+                        .onEnded { _ in
+                            // Keep drag mode — reset happens when play starts
+                        }
+                )
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { scale in
+                            let newZoom = max(0.5, min(4.0, zoomScale * scale))
+                            zoomScale = newZoom
+                        }
                 )
                 .onChange(of: viewModel.isPlaying) { playing in
-                    // Reset manual scroll when user taps play
-                    if playing { userIsDragging = false }
+                    if playing {
+                        userIsDragging = false
+                        lastAutoScrollTime = -1 // Force immediate scroll sync
+                    }
                 }
                 .onChange(of: viewModel.currentTime) { newTime in
                     guard viewModel.isPlaying, !userIsDragging else { return }
@@ -81,6 +121,7 @@ struct ClipsTimelineView: View {
 
             playhead
         }
+        .coordinateSpace(name: "timeline")
         .background(theme.isDark ? theme.surface : theme.borderLight)
         .padding(.vertical, 4)
     }
@@ -194,6 +235,42 @@ struct ClipsTimelineView: View {
                         .lineLimit(1)
                 }
                 .foregroundColor(theme.foxBlue)
+                .padding(.horizontal, 8)
+            }
+            .frame(width: barWidth, height: musicRowHeight)
+
+            Spacer(minLength: 0)
+        }
+        .frame(height: musicRowHeight)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: - Voiceover Waveform Row
+
+    private var voiceoverWaveformRow: some View {
+        let barWidth = max(60, totalDuration * pixelsPerSecond)
+
+        return HStack(spacing: 0) {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(theme.success.opacity(0.2))
+                    .frame(width: barWidth, height: musicRowHeight)
+
+                AudioWaveformView(width: barWidth, height: musicRowHeight, color: theme.success)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(theme.success.opacity(0.5), lineWidth: 1)
+                    .frame(width: barWidth, height: musicRowHeight)
+
+                HStack(spacing: 4) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 10))
+                    Text("Voiceover")
+                        .font(.system(size: 9, weight: .medium))
+                        .lineLimit(1)
+                }
+                .foregroundColor(theme.success)
                 .padding(.horizontal, 8)
             }
             .frame(width: barWidth, height: musicRowHeight)
@@ -521,5 +598,14 @@ struct TrimHandle: View {
                     .frame(width: 3, height: 18)
             )
             .contentShape(Rectangle().inset(by: -8))
+    }
+}
+
+// MARK: - Scroll offset tracking
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }

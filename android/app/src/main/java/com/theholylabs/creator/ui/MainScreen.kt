@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.theholylabs.creator.AppState
 import com.theholylabs.creator.AppUiState
+import com.theholylabs.creator.ui.catalog.CatalogScreen
 import com.theholylabs.creator.ui.create.CreateScreen
 import com.theholylabs.creator.ui.library.LibraryScreen
 import com.theholylabs.creator.ui.settings.SettingsScreen
@@ -30,7 +32,7 @@ fun MainScreen(
     onShareVideo: (String) -> Unit,
     onEditVideo: (videoUri: String, videoName: String, takesJson: String?, musicUrl: String?, generationId: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
-    var selectedTab by remember { mutableIntStateOf(1) } // Default to "Create" to match iOS
+    var selectedTab by remember { mutableIntStateOf(2) } // Default to "Create" to match iOS
 
     Scaffold(
         bottomBar = {
@@ -54,8 +56,8 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = selectedTab == 1,
                     onClick = { selectedTab = 1 },
-                    icon = { Icon(Icons.Default.AddCircle, contentDescription = "Create") },
-                    label = { Text("Create") },
+                    icon = { Icon(Icons.Default.GridView, contentDescription = "Catalog") },
+                    label = { Text("Catalog") },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = MaterialTheme.colorScheme.primary,
                         selectedTextColor = MaterialTheme.colorScheme.primary,
@@ -67,6 +69,19 @@ fun MainScreen(
                 NavigationBarItem(
                     selected = selectedTab == 2,
                     onClick = { selectedTab = 2 },
+                    icon = { Icon(Icons.Default.AddCircle, contentDescription = "Create") },
+                    label = { Text("Create") },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        unselectedIconColor = Color.Gray,
+                        unselectedTextColor = Color.Gray,
+                        indicatorColor = Color.Transparent
+                    )
+                )
+                NavigationBarItem(
+                    selected = selectedTab == 3,
+                    onClick = { selectedTab = 3 },
                     icon = { Icon(Icons.Default.AccountCircle, contentDescription = "Profile") },
                     label = { Text("Profile") },
                     colors = NavigationBarItemDefaults.colors(
@@ -88,7 +103,13 @@ fun MainScreen(
                     onShare = onShareVideo,
                     onEdit = { url, name, takes, music, genId -> onEditVideo(url, name, takes, music, genId) }
                 )
-                1 -> CreateScreen(
+                1 -> CatalogScreen(
+                    onUsePrompt = { prompt ->
+                        // TODO: prefill prompt in CreateScreen
+                        selectedTab = 2
+                    }
+                )
+                2 -> CreateScreen(
                     appState = appState,
                     uiState = uiState,
                     onBuyCredits = onBuyCredits,
@@ -96,7 +117,7 @@ fun MainScreen(
                     onEditVideo = onEditVideo,
                     onSwitchToLibrary = { selectedTab = 0 }
                 )
-                2 -> SettingsScreen(
+                3 -> SettingsScreen(
                     uiState = uiState,
                     appState = appState,
                     onBuyCredits = onBuyCredits,

@@ -80,22 +80,37 @@ object VideoRenderService {
                     builder.setRemoveAudio(true)
                 }
 
+                // Build overlay list: watermark + optional subtitle
+                val overlays = mutableListOf<TextureOverlay>()
+
+                // CreatorAI watermark (bottom-right corner)
+                val watermarkBitmap = createWatermarkBitmap(context)
+                overlays.add(
+                    BitmapOverlay.createStaticBitmapOverlay(
+                        watermarkBitmap,
+                        OverlaySettings.Builder().build()
+                    )
+                )
+
                 // Burn subtitle overlay if enabled and clip has text
                 if (burnSubtitles && !clip.text.isNullOrBlank()) {
                     val subtitleBitmap = createSubtitleBitmap(clip.text, subtitleYPosition)
-                    val bitmapOverlay = BitmapOverlay.createStaticBitmapOverlay(
-                        subtitleBitmap,
-                        OverlaySettings.Builder().build()
-                    )
-                    @Suppress("UNCHECKED_CAST")
-                    val overlayEffect = OverlayEffect(ImmutableList.of(bitmapOverlay) as ImmutableList<TextureOverlay>)
-                    builder.setEffects(
-                        androidx.media3.transformer.Effects(
-                            listOf(),
-                            listOf(overlayEffect)
+                    overlays.add(
+                        BitmapOverlay.createStaticBitmapOverlay(
+                            subtitleBitmap,
+                            OverlaySettings.Builder().build()
                         )
                     )
                 }
+
+                @Suppress("UNCHECKED_CAST")
+                val overlayEffect = OverlayEffect(ImmutableList.copyOf(overlays) as ImmutableList<TextureOverlay>)
+                builder.setEffects(
+                    androidx.media3.transformer.Effects(
+                        listOf(),
+                        listOf(overlayEffect)
+                    )
+                )
 
                 builder.build()
             }
@@ -207,6 +222,50 @@ object VideoRenderService {
         }
 
         return builder.build()
+    }
+
+    /**
+     * Create a transparent bitmap with CreatorAI logo + text watermark in the bottom-right corner.
+     */
+    private fun createWatermarkBitmap(context: Context): android.graphics.Bitmap {
+        val width = 1080
+        val height = 1920
+
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val textPaint = TextPaint().apply {
+            color = Color.argb(128, 255, 255, 255) // 50% white
+            textSize = 28f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            isAntiAlias = true
+            setShadowLayer(4f, 1f, 1f, Color.argb(180, 0, 0, 0))
+        }
+
+        val text = "CreatorAI"
+        val textWidth = textPaint.measureText(text)
+        val margin = 32f
+        val x = width - textWidth - margin
+        val y = height - margin
+
+        canvas.drawText(text, x, y, textPaint)
+
+        // Draw app icon next to text
+        try {
+            val iconSize = 36
+            val appIcon = context.packageManager.getApplicationIcon(context.packageName)
+            val iconBitmap = android.graphics.Bitmap.createBitmap(iconSize, iconSize, android.graphics.Bitmap.Config.ARGB_8888)
+            val iconCanvas = Canvas(iconBitmap)
+            appIcon.setBounds(0, 0, iconSize, iconSize)
+            appIcon.draw(iconCanvas)
+
+            val iconPaint = Paint().apply { alpha = 153 } // 60% opacity
+            canvas.drawBitmap(iconBitmap, x - iconSize - 8f, y - iconSize + 4f, iconPaint)
+        } catch (e: Exception) {
+            android.util.Log.w("VideoRender", "Could not draw app icon: ${e.message}")
+        }
+
+        return bitmap
     }
 
     /**

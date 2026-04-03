@@ -420,4 +420,6 @@ extension Notification.Name {
     static let navigateToVideoEditor = Notification.Name("navigateToVideoEditor")
     static let navigateToGenerationStatus = Notification.Name("navigateToGenerationStatus")
     static let switchToLibraryTab = Notification.Name("switchToLibraryTab")
+    static let catalogUsePrompt = Notification.Name("catalogUsePrompt")
+    static let prefillPrompt = Notification.Name("prefillPrompt")
 }

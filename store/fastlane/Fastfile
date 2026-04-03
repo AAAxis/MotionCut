@@ -6,7 +6,7 @@ platform :ios do
     api_key = app_store_connect_api_key(
       key_id: "TR5F2GR4AJ",
       issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",
-      key_filepath: "/Users/admin/Documents/GitHub/video-editor/fastlane/AuthKey_TR5F2GR4AJ.p8"
+      key_filepath: "fastlane/AuthKey_TR5F2GR4AJ.p8"
     )
 
     app = Spaceship::ConnectAPI::App.find("com.theholylabs.creator")
@@ -27,7 +27,7 @@ platform :ios do
     api_key = app_store_connect_api_key(
       key_id: "TR5F2GR4AJ",
       issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",
-      key_filepath: "/Users/admin/Documents/GitHub/video-editor/fastlane/AuthKey_TR5F2GR4AJ.p8"
+      key_filepath: "fastlane/AuthKey_TR5F2GR4AJ.p8"
     )
 
     deliver(
@@ -40,7 +40,9 @@ platform :ios do
       metadata_path: "./fastlane/metadata",
       precheck_include_in_app_purchases: false,
       run_precheck_before_submit: false,
-      ignore_language_directory_validation: true
+      ignore_language_directory_validation: true,
+      submit_for_review: true,
+      automatic_release: true
     )
   end
 
@@ -49,7 +51,7 @@ platform :ios do
     api_key = app_store_connect_api_key(
       key_id: "TR5F2GR4AJ",
       issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",
-      key_filepath: "/Users/admin/Documents/GitHub/video-editor/fastlane/AuthKey_TR5F2GR4AJ.p8"
+      key_filepath: "fastlane/AuthKey_TR5F2GR4AJ.p8"
     )
 
     target_locales = %w[
@@ -106,7 +108,9 @@ platform :ios do
       metadata_path: "./fastlane/metadata",
       precheck_include_in_app_purchases: false,
       run_precheck_before_submit: false,
-      ignore_language_directory_validation: true
+      ignore_language_directory_validation: true,
+      submit_for_review: true,
+      automatic_release: true
     )
   end
 end

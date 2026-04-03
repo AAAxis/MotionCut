@@ -1,0 +1,7 @@
+Novidades na versão 3.1:
+
+• Catálogo — Explore vídeos criados pela comunidade. Toque para reproduzir, edite qualquer prompt e faça-o seu.
+• Gravação de voz — Grave a sua voz diretamente no editor. Veja-a como forma de onda na linha temporal.
+• Navegação na linha temporal — Deslize para procurar fotograma a fotograma.
+• Correção de créditos — O seu saldo agora fica sincronizado entre a app e o painel web.
+• Correções de bugs e melhorias de desempenho.

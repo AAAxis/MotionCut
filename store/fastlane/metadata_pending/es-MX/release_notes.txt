@@ -1,4 +1,0 @@
-• Nuevo Estudio de Avatares IA — presentadores digitales hiperrealistas
-• Renderizado hasta 3× más rápido
-• Mejoras en Beat Sync con detección automática de tempo
-• Correcciones de errores y mejoras de rendimiento

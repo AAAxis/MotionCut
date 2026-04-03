@@ -32,14 +32,14 @@ private final class PlayerAspectFitView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = Self.bg
-        playerLayer.videoGravity = .resizeAspect
+        playerLayer.videoGravity = .resizeAspectFill
         playerLayer.backgroundColor = Self.bg.cgColor
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
         backgroundColor = Self.bg
-        playerLayer.videoGravity = .resizeAspect
+        playerLayer.videoGravity = .resizeAspectFill
         playerLayer.backgroundColor = Self.bg.cgColor
     }
 }
@@ -93,13 +93,12 @@ struct VideoPreviewView: View {
                 }
             }
 
-            // Play/Pause overlay
+            // Play/Pause overlay — centered
             if !viewModel.isPlaying {
                 Image(systemName: "play.fill")
                     .font(.system(size: 44))
                     .foregroundColor(.white.opacity(0.8))
                     .shadow(radius: 4)
-                    .offset(y: -30)
             }
 
             // Bottom controls bar (overlaid)

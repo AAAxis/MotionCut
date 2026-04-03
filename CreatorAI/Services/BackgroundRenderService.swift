@@ -16,6 +16,9 @@ struct ExportParams {
     let takesJson: String?
     /// If true, after render the app will request cloud caption burn-in (no local captions).
     let addCaptionsViaCloud: Bool
+    /// Local file URL for recorded voiceover audio.
+    let voiceoverFileURL: URL?
+    let voiceoverVolume: Double
 }
 
 /// Runs video render in the background. Saves a generation with status .processing so it appears in Library, then updates when done.
@@ -38,7 +41,9 @@ final class BackgroundRenderService {
             musicFileUrl: editorParams.musicUrl,
             musicVolume: 0.75,
             takesJson: editorParams.takesJson,
-            addCaptionsViaCloud: false
+            addCaptionsViaCloud: false,
+            voiceoverFileURL: nil,
+            voiceoverVolume: 1.0
         )
         return await startExport(params: exportParams)
     }
@@ -105,9 +110,15 @@ final class BackgroundRenderService {
             )
         }
 
+        var voiceoverOptions: VoiceoverRenderOptions?
+        if let voURL = params.voiceoverFileURL {
+            voiceoverOptions = VoiceoverRenderOptions(fileURL: voURL, volume: params.voiceoverVolume)
+        }
+
         let result = await VideoRenderService.shared.renderVideo(
             clips: params.clips,
             music: musicOptions,
+            voiceover: voiceoverOptions,
             aspectRatio: params.aspectRatio,
             onProgress: nil
         )

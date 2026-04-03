@@ -58,8 +58,8 @@ final class FirebaseAuthService {
 
         print("[Auth] Firebase sign-in OK: uid=\(user.uid) email=\(user.email ?? "nil")")
 
-        // Save user to Supabase app_users table (matches Android behavior)
-        await SupabaseService.shared.upsertUser(
+        // Register user via Worker (uses service key to bypass RLS)
+        await registerUserViaWorker(
             userId: user.uid,
             email: user.email,
             displayName: user.displayName,
@@ -71,6 +71,29 @@ final class FirebaseAuthService {
             userId: user.uid,
             email: user.email
         )
+    }
+
+    private func registerUserViaWorker(userId: String, email: String?, displayName: String?, avatarUrl: String?) async {
+        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
+        guard let url = URL(string: "\(baseURL)/api/auth/token") else { return }
+
+        var body: [String: String] = ["externalId": userId, "platform": "ios"]
+        if let email = email { body["email"] = email }
+        if let displayName = displayName { body["displayName"] = displayName }
+        if let avatarUrl = avatarUrl { body["avatarUrl"] = avatarUrl }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            print("[Auth] Worker register user: \(status)")
+        } catch {
+            print("[Auth] Worker register failed: \(error)")
+        }
     }
 
     // MARK: - Sign Out

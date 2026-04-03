@@ -107,11 +107,28 @@ fun AppNavigation(
                     navController.navigate("video_editor?uri=$encodedUri&name=$encodedName")
                 },
                 onShareVideo = { url ->
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_TEXT, url)
+                    // Try to share as a file first, fall back to text link
+                    val file = java.io.File(url.removePrefix("file://"))
+                    if (file.exists()) {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                            activity,
+                            "${activity.packageName}.fileprovider",
+                            file
+                        )
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "video/mp4"
+                            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        activity.startActivity(android.content.Intent.createChooser(intent, "Share Video"))
+                    } else if (url.startsWith("http")) {
+                        // Remote URL — share as text
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, url)
+                        }
+                        activity.startActivity(android.content.Intent.createChooser(intent, "Share Video"))
                     }
-                    activity.startActivity(android.content.Intent.createChooser(intent, "Share Video"))
                 }
             )
         }

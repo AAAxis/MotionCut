@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import QuartzCore
+import UIKit
 
 // NOTE: This service requires ffmpeg-kit-ios-full SPM package.
 // Import FFmpegKit when the package is added to the Xcode project:
@@ -15,7 +16,7 @@ class VideoRenderService {
 
     // MARK: - Main Render Entry
 
-    func renderVideo(clips: [Clip], music: MusicRenderOptions?, aspectRatio: String = "1:1", onProgress: ProgressCallback?) async -> URL? {
+    func renderVideo(clips: [Clip], music: MusicRenderOptions?, voiceover: VoiceoverRenderOptions? = nil, aspectRatio: String = "1:1", onProgress: ProgressCallback?) async -> URL? {
         let report: (String) -> Void = { msg in
             print("[renderVideo] \(msg)")
             onProgress?(msg)
@@ -55,10 +56,10 @@ class VideoRenderService {
                 return url
             }
         } else {
-            if let url = await renderStandardModeWithAVFoundation(clips: localClips, music: music, outputPath: outputPath, onProgress: report) {
+            if let url = await renderStandardModeWithAVFoundation(clips: localClips, music: music, voiceover: voiceover, outputPath: outputPath, onProgress: report) {
                 return url
             }
-            if let url = await renderStandardMode(clips: localClips, music: music, outputPath: outputPath, onProgress: report) {
+            if let url = await renderStandardMode(clips: localClips, music: music, voiceover: voiceover, outputPath: outputPath, onProgress: report) {
                 return url
             }
         }
@@ -91,7 +92,7 @@ class VideoRenderService {
         return URL(fileURLWithPath: path)
     }
 
-    private func renderStandardModeWithAVFoundation(clips: [Clip], music: MusicRenderOptions?, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
+    private func renderStandardModeWithAVFoundation(clips: [Clip], music: MusicRenderOptions?, voiceover: VoiceoverRenderOptions? = nil, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
         onProgress("Preparing clips...")
         let composition = AVMutableComposition()
         guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
@@ -130,7 +131,20 @@ class VideoRenderService {
                 renderSize = CGSize(width: abs(renderSize.width), height: abs(renderSize.height))
                 if renderSize.width < 1 || renderSize.height < 1 { renderSize = CGSize(width: 1920, height: 1080) }
             }
-            currentTime = CMTimeAdd(currentTime, rangeDuration)
+
+            // Apply speed change: scaleTimeRange stretches/compresses the inserted segment
+            let speed = max(0.1, min(5.0, clip.speed))
+            let insertedRange = CMTimeRange(start: currentTime, duration: rangeDuration)
+            if abs(speed - 1.0) > 0.01 {
+                let scaledDuration = CMTimeMultiplyByFloat64(rangeDuration, multiplier: 1.0 / speed)
+                videoTrack.scaleTimeRange(insertedRange, toDuration: scaledDuration)
+                if let audioTrack = audioTrack {
+                    audioTrack.scaleTimeRange(insertedRange, toDuration: scaledDuration)
+                }
+                currentTime = CMTimeAdd(currentTime, scaledDuration)
+            } else {
+                currentTime = CMTimeAdd(currentTime, rangeDuration)
+            }
         }
 
         if CMTimeGetSeconds(currentTime) < 0.01 { return nil }
@@ -156,6 +170,32 @@ class VideoRenderService {
             }
         }
 
+        // Add voiceover track (recorded audio)
+        if let vo = voiceover {
+            onProgress("Adding voiceover...")
+            let voAsset = AVURLAsset(url: vo.fileURL)
+            if let voAudioTrack = try? await voAsset.loadTracks(withMediaType: .audio).first {
+                if let voTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                    let voDuration = (try? await voAsset.load(.duration)) ?? .zero
+                    let insertDuration = CMTimeGetSeconds(currentTime) < CMTimeGetSeconds(voDuration) ? currentTime : voDuration
+                    let voRange = CMTimeRange(start: .zero, duration: insertDuration)
+                    try? voTrack.insertTimeRange(voRange, of: voAudioTrack, at: .zero)
+
+                    let voMixParams = AVMutableAudioMixInputParameters(track: voTrack)
+                    voMixParams.setVolume(Float(vo.volume), at: .zero)
+
+                    if var mix = audioMix {
+                        mix.inputParameters = mix.inputParameters + [voMixParams]
+                        audioMix = mix
+                    } else {
+                        let mix = AVMutableAudioMix()
+                        mix.inputParameters = [voMixParams]
+                        audioMix = mix
+                    }
+                }
+            }
+        }
+
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = renderSize
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
@@ -165,9 +205,12 @@ class VideoRenderService {
         layerInstruction.setTransform(firstTrackTransform, at: .zero)
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
-        // Captions are optional and done via cloud; no local overlay.
 
-        if await exportComposition(composition, videoComposition: videoComposition, audioMix: audioMix, to: outputPath) {
+        // Add CreatorAI branding (watermark + outro card)
+        var brandedComposition = videoComposition
+        addBranding(to: composition, videoComposition: &brandedComposition, videoDuration: currentTime)
+
+        if await exportComposition(composition, videoComposition: brandedComposition, audioMix: audioMix, to: outputPath) {
             return outputPath
         }
         print("[renderVideo] Standard export failed, retrying with no composition...")
@@ -408,6 +451,82 @@ class VideoRenderService {
         return (videoLayer, animationLayer)
     }
 
+    // MARK: - CreatorAI Branding (watermark + outro)
+
+    /// Adds a small CreatorAI logo watermark (bottom-right) and a 2s outro card.
+    private func addBranding(to composition: AVMutableComposition, videoComposition: inout AVMutableVideoComposition, videoDuration: CMTime) {
+        let renderSize = videoComposition.renderSize
+        guard renderSize.width > 0, renderSize.height > 0 else { return }
+
+        let videoLayer = CALayer()
+        videoLayer.frame = CGRect(origin: .zero, size: renderSize)
+
+        let animationLayer = CALayer()
+        animationLayer.frame = CGRect(origin: .zero, size: renderSize)
+        animationLayer.beginTime = AVCoreAnimationBeginTimeAtZero
+        animationLayer.addSublayer(videoLayer)
+
+        // -- Watermark logo (bottom-right, throughout video) --
+        let logoSize: CGFloat = min(renderSize.width, renderSize.height) * 0.06
+        let margin: CGFloat = logoSize * 0.5
+
+        if let logoImage = Self.appIconImage()?.cgImage {
+            let logoLayer = CALayer()
+            logoLayer.contents = logoImage
+            logoLayer.contentsGravity = .resizeAspect
+            // Core Animation: origin is bottom-left
+            logoLayer.frame = CGRect(
+                x: renderSize.width - logoSize - margin,
+                y: margin,
+                width: logoSize,
+                height: logoSize
+            )
+            logoLayer.opacity = 0.6
+            logoLayer.cornerRadius = logoSize * 0.2
+            logoLayer.masksToBounds = true
+            animationLayer.addSublayer(logoLayer)
+        }
+
+        // -- "CreatorAI" text next to logo --
+        let textLayer = CATextLayer()
+        textLayer.string = "CreatorAI"
+        textLayer.font = CTFontCreateWithName("HelveticaNeue-Bold" as CFString, 0, nil)
+        textLayer.fontSize = logoSize * 0.45
+        textLayer.foregroundColor = CGColor(red: 1, green: 1, blue: 1, alpha: 0.5)
+        textLayer.alignmentMode = .right
+        textLayer.contentsScale = 2.0
+        let textWidth = logoSize * 3
+        textLayer.frame = CGRect(
+            x: renderSize.width - logoSize - margin - textWidth - 4,
+            y: margin + logoSize * 0.15,
+            width: textWidth,
+            height: logoSize * 0.6
+        )
+        textLayer.shadowColor = CGColor(red: 0, green: 0, blue: 0, alpha: 0.8)
+        textLayer.shadowOffset = CGSize(width: 1, height: 1)
+        textLayer.shadowOpacity = 0.8
+        textLayer.shadowRadius = 2
+        animationLayer.addSublayer(textLayer)
+
+        // Apply animation tool to video composition
+        videoComposition.animationTool = AVVideoCompositionCoreAnimationTool(
+            postProcessingAsVideoLayer: videoLayer,
+            in: animationLayer
+        )
+    }
+
+    /// Load the app icon from the bundle (works even though it's in the asset catalog).
+    private static func appIconImage() -> UIImage? {
+        if let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+           let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+           let files = primary["CFBundleIconFiles"] as? [String],
+           let iconName = files.last {
+            return UIImage(named: iconName)
+        }
+        // Fallback: load directly from the asset catalog icon set
+        return UIImage(named: "AppIcon60x60") ?? UIImage(named: "AppIcon")
+    }
+
     private func exportComposition(_ composition: AVMutableComposition, videoComposition: AVMutableVideoComposition? = nil, audioMix: AVMutableAudioMix? = nil, to url: URL) async -> Bool {
         // Passthrough only works without videoComposition (no re-encoding needed).
         // Include lower-resolution presets to work around encoder -12849 with some audio mixes.
@@ -610,7 +729,7 @@ class VideoRenderService {
 
     // MARK: - Standard Mode (concat with trim + optional music)
 
-    private func renderStandardMode(clips: [Clip], music: MusicRenderOptions?, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
+    private func renderStandardMode(clips: [Clip], music: MusicRenderOptions?, voiceover: VoiceoverRenderOptions? = nil, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
         onProgress("Preparing clips...")
 
         let fileListPath = storage.renderedVideosDirectory.appendingPathComponent("filelist.txt")
@@ -697,4 +816,9 @@ struct MusicRenderOptions {
     let volume: Double
     let quality: String
     var resolvedPath: String?
+}
+
+struct VoiceoverRenderOptions {
+    let fileURL: URL
+    let volume: Double
 }

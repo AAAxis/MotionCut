@@ -18,10 +18,15 @@
 // ── Config ───────────────────────────────────────────────────────────
 const MODEL_CREDITS_PER_SECOND = {
   'bytedance/seedance-1-lite': 1,
+  'wan-video/wan-2.5-t2v-fast': 1,
   'bytedance/seedance-1-pro': 2,
-  'kwaivgi/kling-v2.1': 3,
   'kwaivgi/kling-v1.6-standard': 2,
+  'kwaivgi/kling-v2.1': 3,
+  'kwaivgi/kling-v3.0': 4,
   'minimax/video-01': 5,
+  'google/veo-3.1-fast': 5,
+  'google/veo-3.1': 8,
+  'runway/gen-4.5': 8,
 };
 
 const FREE_CREDITS = 10;
@@ -56,8 +61,8 @@ async function supabase(env, method, table, options = {}) {
   if (params.length) url += '?' + params.join('&');
 
   const headers = {
-    'apikey': env.SUPABASE_SERVICE_KEY,
-    'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`,
+    'apikey': env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY,
+    'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY}`,
     'Content-Type': 'application/json',
     'Prefer': 'return=representation',
   };
@@ -89,6 +94,15 @@ async function supabase(env, method, table, options = {}) {
 async function getUser(env, userId) {
   const rows = await supabase(env, 'GET', 'app_users', {
     filter: `id=eq.${userId}`,
+    select: '*',
+  });
+  return rows?.[0] || null;
+}
+
+async function getUserByEmail(env, email) {
+  if (!email) return null;
+  const rows = await supabase(env, 'GET', 'app_users', {
+    filter: `email=eq.${email}`,
     select: '*',
   });
   return rows?.[0] || null;
@@ -222,32 +236,90 @@ async function handleAuth(request, env) {
   const { externalId, email, firebaseUid, fcmToken, platform, displayName, avatarUrl } = await request.json();
   if (!externalId) return json({ error: 'externalId required' }, 400);
 
-  await upsertUser(env, {
-    id: externalId,
-    email: email || undefined,
-    firebase_uid: firebaseUid || undefined,
-    fcm_token: fcmToken || undefined,
-    platform: platform || undefined,
-    display_name: displayName || undefined,
-    avatar_url: avatarUrl || undefined,
-  });
+  // Check if user already exists by ID
+  let existing = await getUser(env, externalId);
 
-  return json({ ok: true, userId: externalId });
+  // If not found by ID, check by email — merge accounts across platforms
+  if (!existing && email) {
+    const emailUser = await getUserByEmail(env, email);
+    if (emailUser) {
+      // Migrate old account: update the ID to Firebase UID, keep credits
+      await supabase(env, 'PATCH', 'app_users', {
+        filter: `id=eq.${emailUser.id}`,
+        body: {
+          id: externalId,
+          firebase_uid: firebaseUid || undefined,
+          fcm_token: fcmToken || undefined,
+          platform: platform || undefined,
+          display_name: displayName || emailUser.display_name,
+          avatar_url: avatarUrl || emailUser.avatar_url,
+        },
+      });
+      existing = { ...emailUser, id: externalId };
+    }
+  }
+
+  if (existing) {
+    // Update profile fields without overwriting credits
+    await upsertUser(env, {
+      id: externalId,
+      email: email || undefined,
+      firebase_uid: firebaseUid || undefined,
+      fcm_token: fcmToken || undefined,
+      platform: platform || undefined,
+      display_name: displayName || undefined,
+      avatar_url: avatarUrl || undefined,
+    });
+  } else {
+    // New user — give free credits
+    await upsertUser(env, {
+      id: externalId,
+      email: email || undefined,
+      firebase_uid: firebaseUid || undefined,
+      fcm_token: fcmToken || undefined,
+      platform: platform || undefined,
+      display_name: displayName || undefined,
+      avatar_url: avatarUrl || undefined,
+      credits: FREE_CREDITS,
+    });
+  }
+
+  return json({ ok: true, userId: externalId, credits: existing?.credits ?? FREE_CREDITS });
 }
 
 async function handleCreditsGet(request, env) {
-  const { userId } = await request.json();
+  const { userId, email } = await request.json();
   if (!userId) return json({ error: 'userId required' }, 400);
 
   let user = await getUser(env, userId);
+
+  // Fallback: find by email if not found by ID
+  if (!user && email) {
+    user = await getUserByEmail(env, email);
+    if (user && user.id !== userId) {
+      // Migrate old record to new Firebase UID
+      await supabase(env, 'PATCH', 'app_users', {
+        filter: `id=eq.${user.id}`,
+        body: { id: userId },
+      });
+      user.id = userId;
+    }
+  }
+
   if (!user) {
-    await upsertUser(env, { id: userId, credits: FREE_CREDITS });
+    await upsertUser(env, { id: userId, email: email || undefined, credits: FREE_CREDITS });
     return json({ credits: FREE_CREDITS, isSubscribed: false });
+  }
+
+  // Fix users created without credits (e.g. old direct Supabase writes)
+  if (user.credits == null) {
+    await upsertUser(env, { id: userId, credits: FREE_CREDITS });
+    user.credits = FREE_CREDITS;
   }
 
   const rateInfo = await checkRateLimit(env, userId);
   return json({
-    credits: user.is_subscribed ? -1 : (user.credits || 0),
+    credits: user.is_subscribed ? -1 : user.credits,
     isSubscribed: user.is_subscribed || false,
     rateLimit: rateInfo,
   });

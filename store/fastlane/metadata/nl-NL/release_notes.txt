@@ -1,0 +1,7 @@
+Nieuw in 3.1:
+
+• Catalogus — Ontdek video's gemaakt door de community. Tik om af te spelen, bewerk elke prompt en maak het je eigen.
+• Voiceover opname — Neem je eigen stem op in de editor. Bekijk het als golfvorm op de tijdlijn.
+• Tijdlijn scrubben — Schuif om beeld voor beeld door je video te navigeren.
+• Credits fix — Je tegoed blijft nu gesynchroniseerd tussen de app en het webdashboard.
+• Bugfixes en prestatieverbeteringen.

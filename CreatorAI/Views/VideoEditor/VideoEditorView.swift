@@ -68,9 +68,16 @@ struct VideoEditorView: View {
             .padding(.top, 8)
             .padding(.bottom, 8)
 
-            // Video preview — 50% of screen height
-            VideoPreviewView(viewModel: viewModel)
-                .frame(height: UIScreen.main.bounds.height * 0.42)
+            // Video preview — fills height, cropped to selected aspect ratio
+            GeometryReader { geo in
+                let h = geo.size.height
+                let w = h * previewAspectRatio
+                VideoPreviewView(viewModel: viewModel)
+                    .frame(width: w, height: h)
+                    .clipped()
+                    .frame(maxWidth: .infinity)
+            }
+            .frame(height: UIScreen.main.bounds.height * 0.42)
 
             // Timeline + tracks
             ClipsTimelineView(viewModel: viewModel)
@@ -148,6 +155,21 @@ struct VideoEditorView: View {
                 SubtitlesTabView(viewModel: viewModel)
             }
         }
+        .fullScreenCover(isPresented: $viewModel.showSpeedSheet) {
+            SheetWrapper(title: "Speed", isPresented: $viewModel.showSpeedSheet) {
+                SpeedControlView(viewModel: viewModel)
+            }
+        }
+        .fullScreenCover(isPresented: $viewModel.showAspectRatioSheet) {
+            SheetWrapper(title: "Aspect Ratio", isPresented: $viewModel.showAspectRatioSheet) {
+                AspectRatioView(viewModel: viewModel)
+            }
+        }
+        .fullScreenCover(isPresented: $viewModel.showVoiceoverSheet) {
+            SheetWrapper(title: "Voiceover", isPresented: $viewModel.showVoiceoverSheet) {
+                VoiceoverRecordView(viewModel: viewModel)
+            }
+        }
         .fullScreenCover(isPresented: $viewModel.showPexelsSheet) {
             PexelsSearchSheet(viewModel: viewModel)
         }
@@ -205,36 +227,68 @@ struct VideoEditorView: View {
         }
     }
 
+    private var previewAspectRatio: CGFloat {
+        switch viewModel.aspectRatio {
+        case "9:16": return 9.0 / 16.0
+        case "16:9": return 16.0 / 9.0
+        case "4:5": return 4.0 / 5.0
+        default: return 1.0 // 1:1
+        }
+    }
+
     // MARK: - Bottom Action Bar
 
     private var bottomActionBar: some View {
-        HStack(spacing: 0) {
-            bottomBarButton(icon: "scissors", label: "Cut") {
-                viewModel.splitClipAtPlayhead()
-            }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 0) {
+                bottomBarButton(icon: "sparkles", label: "AI") {
+                    viewModel.showAiPrompt = true
+                }
 
-            bottomBarButton(icon: "arrow.triangle.2.circlepath", label: "Change") {
-                viewModel.pexelsReplaceMode = true
-                viewModel.showPexelsSheet = true
-            }
+                bottomBarButton(icon: "scissors", label: "Cut") {
+                    viewModel.splitClipAtPlayhead()
+                }
 
-            if viewModel.clips.count > 1 {
-                bottomBarButton(icon: "trash", label: "Delete", color: .red) {
-                    viewModel.removeClip(at: viewModel.activeClipIndex)
+                bottomBarButton(
+                    icon: "gauge.with.dots.needle.33percent",
+                    label: "Speed",
+                    color: viewModel.activeClipSpeed != 1.0 ? theme.primary : nil
+                ) {
+                    viewModel.showSpeedSheet = true
+                }
+
+                bottomBarButton(icon: "arrow.triangle.2.circlepath", label: "Change") {
+                    viewModel.pexelsReplaceMode = true
+                    viewModel.showPexelsSheet = true
+                }
+
+                bottomBarButton(icon: "trash", label: "Delete", color: viewModel.clips.count > 1 ? .red : theme.textTertiary) {
+                    if viewModel.clips.count > 1 {
+                        viewModel.removeClip(at: viewModel.activeClipIndex)
+                    }
+                }
+
+                bottomBarButton(
+                    icon: viewModel.voiceoverFileURL != nil ? "mic.fill" : "mic",
+                    label: "Voice",
+                    color: viewModel.voiceoverFileURL != nil ? theme.primary : nil
+                ) {
+                    viewModel.showVoiceoverSheet = true
+                }
+
+                bottomBarButton(icon: "music.note", label: "Music") {
+                    showMusicFilePicker = true
+                }
+
+                bottomBarButton(icon: "aspectratio", label: viewModel.aspectRatio) {
+                    viewModel.showAspectRatioSheet = true
+                }
+
+                bottomBarButton(icon: "captions.bubble", label: "Subs") {
+                    showSubsSheet = true
                 }
             }
-
-            bottomBarButton(icon: "music.note", label: "Music") {
-                showMusicFilePicker = true
-            }
-
-            bottomBarButton(icon: "captions.bubble", label: "Subs") {
-                showSubsSheet = true
-            }
-
-            bottomBarButton(icon: "sparkles", label: "AI") {
-                viewModel.showAiPrompt = true
-            }
+            .padding(.horizontal, 4)
         }
         .padding(.vertical, 8)
         .background(theme.surfaceElevated.shadow(color: .black.opacity(0.1), radius: 8, y: -2))
@@ -256,7 +310,7 @@ struct VideoEditorView: View {
                     .font(.system(size: 11, weight: .medium))
             }
             .foregroundColor(color ?? theme.text)
-            .frame(maxWidth: .infinity)
+            .frame(width: 64)
             .padding(.vertical, 6)
         }
     }

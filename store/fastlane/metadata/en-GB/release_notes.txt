@@ -1,0 +1,7 @@
+What's New in 3.1:
+
+• Catalogue — Browse videos created by the community. Tap to play, edit any prompt and make it yours.
+• Voiceover Recording — Record your own voice directly in the editor. See it as a waveform on the timeline.
+• Timeline Scrubbing — Slide the timeline to seek through your video frame by frame.
+• Credits Fix — Your credit balance now stays in sync between the app and web dashboard.
+• Bug fixes and performance improvements.

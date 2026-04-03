@@ -98,7 +98,9 @@ class AppState: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["userId": userId])
+        var body: [String: String] = ["userId": userId]
+        if let email = userEmail { body["email"] = email }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
             let (data, _) = try await URLSession.shared.data(for: request)

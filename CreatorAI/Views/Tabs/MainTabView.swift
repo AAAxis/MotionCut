@@ -4,7 +4,7 @@ struct MainTabView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @State private var navigationPath = NavigationPath()
-    @State private var selectedTab = 1
+    @State private var selectedTab = 2
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -16,19 +16,26 @@ struct MainTabView: View {
                     }
                     .tag(0)
 
+                CatalogView()
+                    .tabItem {
+                        Image(systemName: "rectangle.grid.2x2")
+                        Text("Catalog")
+                    }
+                    .tag(1)
+
                 CreateView()
                     .tabItem {
                         Image(systemName: "plus.circle.fill")
                         Text("Create")
                     }
-                    .tag(1)
+                    .tag(2)
 
                 SettingsView(showCloseButton: false, userId: appState.userId ?? "demo-user")
                     .tabItem {
                         Image(systemName: "person.fill")
                         Text("Profile")
                     }
-                    .tag(2)
+                    .tag(3)
             }
             .tint(theme.primary)
             .navigationDestination(for: Route.self) { route in
@@ -63,6 +70,16 @@ struct MainTabView: View {
             navigationPath = NavigationPath()
             selectedTab = 0
         }
+        .onReceive(NotificationCenter.default.publisher(for: .catalogUsePrompt)) { notification in
+            if let prompt = notification.object as? String {
+                navigationPath = NavigationPath()
+                selectedTab = 2 // Create tab
+                // Post delayed so CreateView has time to mount
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    NotificationCenter.default.post(name: .prefillPrompt, object: prompt)
+                }
+            }
+        }
         .onChange(of: appState.pendingDeeplink) { newValue in
             guard let action = newValue else { return }
             appState.pendingDeeplink = nil
@@ -78,7 +95,7 @@ struct MainTabView: View {
                 navigationPath.append(Route.videoEditor(params))
             case .settings:
                 navigationPath = NavigationPath()
-                selectedTab = 2
+                selectedTab = 3
             }
         }
     }

@@ -1,0 +1,49 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Upload release notes + promotional text to existing localizations only"
+  lane :upload_metadata do
+    api_key = app_store_connect_api_key(
+      key_id: "TR5F2GR4AJ",
+      issuer_id: "5a3c4e24-d77f-43a3-8f73-b6c65aeb6a9c",
+      key_filepath: "store/fastlane/AuthKey_TR5F2GR4AJ.p8"
+    )
+
+    app = Spaceship::ConnectAPI::App.find("com.theholylabs.creator")
+    version = app.get_edit_app_store_version(includes: "appStoreVersionLocalizations")
+
+    unless version
+      UI.user_error!("No editable app store version found. Create version 3.1 in App Store Connect first.")
+    end
+
+    localizations = version.get_app_store_version_localizations
+    UI.message("Found #{localizations.count} existing localizations: #{localizations.map(&:locale).join(', ')}")
+
+    metadata_path = File.expand_path("../fastlane/metadata", __dir__)
+    updated = 0
+
+    localizations.each do |loc|
+      locale_dir = File.join(metadata_path, loc.locale)
+      next unless File.directory?(locale_dir)
+
+      release_file = File.join(locale_dir, "release_notes.txt")
+      promo_file = File.join(locale_dir, "promotional_text.txt")
+
+      attrs = {}
+      attrs[:whatsNew] = File.read(release_file) if File.exist?(release_file)
+      attrs[:promotionalText] = File.read(promo_file) if File.exist?(promo_file)
+
+      next if attrs.empty?
+
+      begin
+        loc.update(attributes: attrs)
+        UI.success("Updated #{loc.locale}")
+        updated += 1
+      rescue => e
+        UI.error("Failed to update #{loc.locale}: #{e.message}")
+      end
+    end
+
+    UI.message("Done — updated #{updated} localizations")
+  end
+end

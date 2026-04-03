@@ -1,0 +1,4 @@
+• Créateur de pubs IA — crée des pubs percutantes pour TikTok, Reels & Shorts
+• Photo-en-Vidéo — transforme n'importe quelle photo en vidéo générée par IA
+• Extraction audio — extrais l'audio de n'importe quelle vidéo dans l'onglet Musique
+• Corrections de bogues et améliorations de performance

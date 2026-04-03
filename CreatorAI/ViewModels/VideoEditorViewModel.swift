@@ -38,6 +38,42 @@ class VideoEditorViewModel: ObservableObject {
     /// True when we tried to load music (from params) but playback failed (download or init).
     @Published var musicLoadFailed = false
 
+    // Voiceover
+    @Published var voiceoverFileURL: URL?
+    @Published var voiceoverVolume: Double = 1.0
+    @Published var showVoiceoverSheet = false
+
+    func setVoiceover(url: URL) {
+        voiceoverFileURL = url
+    }
+
+    func removeVoiceover() {
+        if let url = voiceoverFileURL {
+            try? FileManager.default.removeItem(at: url)
+        }
+        voiceoverFileURL = nil
+    }
+
+    // Speed
+    @Published var showSpeedSheet = false
+
+    // Aspect Ratio
+    @Published var showAspectRatioSheet = false
+
+    func setClipSpeed(_ speed: Double) {
+        guard clips.indices.contains(activeClipIndex) else { return }
+        clips[activeClipIndex].speed = max(0.1, min(5.0, speed))
+        // Apply rate to player only during preview — export uses scaleTimeRange per clip
+        if isPlaying {
+            player?.rate = Float(clips[activeClipIndex].speed)
+        }
+    }
+
+    var activeClipSpeed: Double {
+        guard clips.indices.contains(activeClipIndex) else { return 1.0 }
+        return clips[activeClipIndex].speed
+    }
+
     // Processing
     @Published var isGenerating = false
     @Published var processingStatus = "idle"
@@ -205,6 +241,13 @@ class VideoEditorViewModel: ObservableObject {
                 let next = idx + 1
                 if next < self.clips.count {
                     if self.activeClipIndex >= 0 { self.activeClipIndex = next }
+                    // Apply per-clip speed for the new clip
+                    let clipSpeed = self.clips[next].speed
+                    if abs(clipSpeed - 1.0) > 0.01 {
+                        self.player?.rate = Float(clipSpeed)
+                    } else if self.player?.rate != 1.0 {
+                        self.player?.rate = 1.0
+                    }
                 } else {
                     self.rebuildAndLoop()
                 }
@@ -288,6 +331,11 @@ class VideoEditorViewModel: ObservableObject {
         isPlaying.toggle()
         if isPlaying {
             player?.play()
+            // Apply per-clip speed
+            let speed = activeClipSpeed
+            if abs(speed - 1.0) > 0.01 {
+                player?.rate = Float(speed)
+            }
             musicAVPlayer?.play()
         } else {
             player?.pause()
@@ -298,6 +346,21 @@ class VideoEditorViewModel: ObservableObject {
     func toggleMute() {
         isMuted.toggle()
         player?.isMuted = isMuted
+    }
+
+    func seekToTime(_ seconds: Double) {
+        guard duration > 0 else { return }
+        let clamped = max(0, min(seconds, duration))
+        let pct = (clamped / duration) * 100
+        seek(to: pct)
+    }
+
+    func pauseForScrub() {
+        if isPlaying {
+            player?.pause()
+            musicAVPlayer?.pause()
+            isPlaying = false
+        }
     }
 
     func seek(to percentage: Double) {
@@ -943,7 +1006,9 @@ class VideoEditorViewModel: ObservableObject {
             musicFileUrl: selectedMusic?.file,
             musicVolume: musicVolume,
             takesJson: serializeClipsToTakesJson(clips),
-            addCaptionsViaCloud: addCaptionsViaCloud
+            addCaptionsViaCloud: addCaptionsViaCloud,
+            voiceoverFileURL: voiceoverFileURL,
+            voiceoverVolume: voiceoverVolume
         )
 
         let generationId = await BackgroundRenderService.shared.startExport(params: params)

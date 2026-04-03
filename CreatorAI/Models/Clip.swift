@@ -11,6 +11,8 @@ struct Clip: Identifiable, Codable, Equatable {
     var sourceDuration: Double?
     var text: String?
     var localUri: String?
+    /// Playback speed multiplier. 1.0 = normal, 0.5 = half speed, 2.0 = double speed.
+    var speed: Double
 
     init(
         id: Int,
@@ -22,7 +24,8 @@ struct Clip: Identifiable, Codable, Equatable {
         beatDuration: Double? = nil,
         sourceDuration: Double? = nil,
         text: String? = nil,
-        localUri: String? = nil
+        localUri: String? = nil,
+        speed: Double = 1.0
     ) {
         self.id = id
         self.uri = uri
@@ -34,5 +37,6 @@ struct Clip: Identifiable, Codable, Equatable {
         self.sourceDuration = sourceDuration
         self.text = text
         self.localUri = localUri
+        self.speed = speed
     }
 }
