@@ -48,6 +48,9 @@ struct OnboardingView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.background.ignoresSafeArea(.all))
+        #if os(macOS)
+        .buttonStyle(.plain)
+        #endif
         .animation(.easeInOut(duration: 0.3), value: currentStep)
     }
 

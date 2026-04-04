@@ -1,7 +1,11 @@
 import Foundation
-import UIKit
 import AuthenticationServices
 import CryptoKit
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 /// Runs native Sign in with Apple and returns the identity token and nonce for Supabase.
 /// Enable "Sign in with Apple" capability in Xcode and configure Apple provider in Supabase Dashboard.
@@ -73,10 +77,14 @@ private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDele
     }
 
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {
+        #if os(iOS)
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let window = scenes.flatMap(\.windows).first { $0.isKeyWindow }
             ?? scenes.flatMap(\.windows).first
         return window ?? UIWindow()
+        #else
+        return NSApplication.shared.keyWindow ?? NSWindow()
+        #endif
     }
 }
 

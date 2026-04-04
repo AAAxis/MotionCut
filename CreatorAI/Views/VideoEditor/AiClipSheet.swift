@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(iOS)
 import RevenueCatUI
+#endif
 
 struct AiClipSheet: View {
     @ObservedObject var viewModel: VideoEditorViewModel
@@ -60,31 +62,63 @@ struct AiClipSheet: View {
                 )
             }
 
+            // Credits info
+            HStack(spacing: 4) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
+                Text("Cost: 10 credits")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textTertiary)
+                Spacer()
+                Text("Balance: \(appState.credits >= 0 ? "\(appState.credits)" : "∞")")
+                    .font(.system(size: 12))
+                    .foregroundColor(appState.credits < 10 && appState.credits >= 0 ? theme.error : theme.textTertiary)
+            }
+
             // Generate button
-            Button {
-                if appState.credits < 10 {
+            HStack(spacing: 8) {
+                if viewModel.aiGenerating {
+                    ProgressView().scaleEffect(0.8).tint(.white)
+                    Text("Generating...")
+                        .font(.system(size: 16, weight: .semibold))
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 18))
+                    Text("Generate · 10 credits")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(viewModel.aiGenerating ? theme.primary.opacity(0.7) : theme.primary)
+            )
+            .opacity(viewModel.aiPrompt.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                let prompt = viewModel.aiPrompt.trimmingCharacters(in: .whitespaces)
+                guard !prompt.isEmpty, !viewModel.aiGenerating else { return }
+                if appState.credits < 10 && appState.credits >= 0 {
                     showPaywall = true
                 } else {
                     appState.deductCredits(10)
                     Task { await viewModel.generateAiClip() }
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 18))
-                    Text("Generate")
-                        .font(.system(size: 16, weight: .semibold))
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(theme.primary)
-                )
             }
-            .disabled(viewModel.aiPrompt.trimmingCharacters(in: .whitespaces).isEmpty || viewModel.aiGenerating)
-            .opacity(viewModel.aiPrompt.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+
+            // Error message
+            if let error = viewModel.processingError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(theme.error)
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.error)
+                }
+            }
 
             Spacer()
         }
@@ -95,11 +129,16 @@ struct AiClipSheet: View {
             }
         }
         .sheet(isPresented: $showPaywall) {
+            #if os(iOS)
             PaywallView()
                 .onPurchaseCompleted { _ in
                     Task { await PurchaseService.shared.handlePurchaseCompleted(appState: appState) }
                     showPaywall = false
                 }
+            #else
+            MacBuyCreditsPlaceholder(dismiss: { showPaywall = false })
+                .frame(minWidth: 400, minHeight: 300)
+            #endif
         }
     }
 }

@@ -1,13 +1,12 @@
 import AVFoundation
-import UIKit
 
 actor ThumbnailService {
     static let shared = ThumbnailService()
 
-    private var cache: [String: UIImage] = [:]
+    private var cache: [String: PlatformImage] = [:]
     private let storage = FileStorageService.shared
 
-    func generateThumbnail(for videoURL: URL) async -> UIImage? {
+    func generateThumbnail(for videoURL: URL) async -> PlatformImage? {
         let key = videoURL.absoluteString
 
         // Check memory cache
@@ -19,7 +18,7 @@ actor ThumbnailService {
         let thumbnailURL = storage.thumbnailCacheDirectory.appendingPathComponent("\(key.hashValue).jpg")
         if storage.fileExists(at: thumbnailURL),
            let data = try? Data(contentsOf: thumbnailURL),
-           let image = UIImage(data: data) {
+           let image = PlatformImage.from(data: data) {
             cache[key] = image
             return image
         }
@@ -34,10 +33,10 @@ actor ThumbnailService {
 
         do {
             let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-            let image = UIImage(cgImage: cgImage)
+            let image = PlatformImage.from(cgImage: cgImage)
 
             // Save to disk cache
-            if let jpegData = image.jpegData(compressionQuality: 0.7) {
+            if let jpegData = image.jpegData(quality: 0.7) {
                 try? jpegData.write(to: thumbnailURL)
             }
 

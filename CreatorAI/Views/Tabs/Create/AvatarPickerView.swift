@@ -1,11 +1,13 @@
 import SwiftUI
+#if os(iOS)
 import PhotosUI
+#endif
 
 struct UploadedAvatar: Identifiable {
     let id: String
     let name: String
     let url: String       // server relative path e.g. /uploads/avatar_xxx.jpg
-    var image: UIImage?
+    var image: PlatformImage?
     var fullURL: String {  // full HTTPS URL for AsyncImage
         "\(APIService.shared.syncBaseURL)\(url)"
     }
@@ -16,10 +18,12 @@ struct AvatarPickerView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     
+    #if os(iOS)
     @State private var selectedPhotoItem: PhotosPickerItem?
+    #endif
     @State private var uploadedAvatars: [UploadedAvatar] = []
     @State private var isUploading = false
-    @State private var localPickedImage: UIImage?
+    @State private var localPickedImage: PlatformImage?
 
     private var latestUploadedAvatar: UploadedAvatar? {
         uploadedAvatars.first
@@ -125,6 +129,7 @@ struct AvatarPickerView: View {
                 }
                 
                 // 5th: CREATE OWN — upload photo (always last)
+                #if os(iOS)
                 PhotosPicker(
                     selection: $selectedPhotoItem,
                     matching: .images,
@@ -135,13 +140,13 @@ struct AvatarPickerView: View {
                             ProgressView()
                                 .frame(width: 48, height: 48)
                         } else if let img = localPickedImage {
-                            Image(uiImage: img)
+                            Image(platformImage: img)
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 48, height: 48)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))
                         } else if let avatar = latestUploadedAvatar, let image = avatar.image {
-                            Image(uiImage: image)
+                            Image(platformImage: image)
                                 .resizable()
                                 .scaledToFill()
                                 .frame(width: 48, height: 48)
@@ -185,12 +190,15 @@ struct AvatarPickerView: View {
                     )
                 }
                 .disabled(isUploading)
+                #endif
             }
         }
+        #if os(iOS)
         .onChange(of: selectedPhotoItem) { newItem in
             guard let item = newItem else { return }
             Task { await handleImagePick(item) }
         }
+        #endif
         .onAppear {
             // Only replace the legacy default, not uploaded avatar ids from the backend.
             if viewModel.reelInfluencerId == "avatar_1" || viewModel.reelInfluencerId == "custom" {
@@ -202,15 +210,16 @@ struct AvatarPickerView: View {
     
     // MARK: - Upload Image
     
+    #if os(iOS)
     private func handleImagePick(_ item: PhotosPickerItem) async {
         isUploading = true
-        defer { 
+        defer {
             isUploading = false
             selectedPhotoItem = nil
         }
-        
+
         guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-        guard let uiImage = UIImage(data: data) else { return }
+        guard let uiImage = PlatformImage.from(data: data) else { return }
         
         let resized = resizeImage(uiImage, maxSize: 1024)
         guard let jpegData = resized.jpegData(compressionQuality: 0.85) else { return }
@@ -237,7 +246,8 @@ struct AvatarPickerView: View {
             // Generation will proceed as text-to-video (no image input)
         }
     }
-    
+    #endif
+
     private func uploadAvatarImage(jpegData: Data, filename: String) async throws -> (id: String, name: String, url: String) {
         let baseURL = APIService.shared.syncBaseURL
         let url = URL(string: "\(baseURL)/api/uploads/image")!
@@ -296,7 +306,7 @@ struct AvatarPickerView: View {
             }
             let response = try JSONDecoder().decode(AvatarsResponse.self, from: data)
             await MainActor.run {
-                let existingImagesByID = [String: UIImage](uniqueKeysWithValues: uploadedAvatars.compactMap { avatar in
+                let existingImagesByID = [String: PlatformImage](uniqueKeysWithValues: uploadedAvatars.compactMap { avatar in
                     guard let image = avatar.image else { return nil }
                     return (avatar.id, image)
                 })
@@ -336,15 +346,26 @@ struct AvatarPickerView: View {
         }
     }
     
-    private func resizeImage(_ image: UIImage, maxSize: CGFloat) -> UIImage {
+    private func resizeImage(_ image: PlatformImage, maxSize: CGFloat) -> PlatformImage {
         let size = image.size
         guard max(size.width, size.height) > maxSize else { return image }
         let scale = maxSize / max(size.width, size.height)
         let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+
+        #if os(iOS)
         let renderer = UIGraphicsImageRenderer(size: newSize)
         return renderer.image { _ in
             image.draw(in: CGRect(origin: .zero, size: newSize))
         }
+        #else
+        let newImage = NSImage(size: newSize)
+        newImage.lockFocus()
+        image.draw(in: NSRect(origin: .zero, size: newSize),
+                   from: NSRect(origin: .zero, size: image.size),
+                   operation: .copy, fraction: 1.0)
+        newImage.unlockFocus()
+        return newImage
+        #endif
     }
 
     private func uploadedAvatarURL(for avatar: UploadedAvatar) -> URL? {

@@ -12,15 +12,21 @@ struct SheetWrapper<Content: View>: View {
                 content()
             }
             .navigationTitle(title)
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {
                         isPresented = false
                     } label: {
+                        #if os(macOS)
+                        Text("Done")
+                        #else
                         Image(systemName: "xmark")
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundColor(.primary)
+                        #endif
                     }
                 }
             }

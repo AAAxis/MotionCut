@@ -29,22 +29,10 @@ struct CatalogView: View {
                             .foregroundColor(.gray)
                     }
                 } else {
-                    if #available(iOS 17.0, *) {
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(Array(viewModel.generations.enumerated()), id: \.element.id) { index, item in
-                                    reelCardView(item: item, index: index, size: pageSize)
-                                }
-                            }
-                            .scrollTargetLayout()
-                        }
-                        .scrollTargetBehavior(.paging)
-                    } else {
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVStack(spacing: 0) {
-                                ForEach(Array(viewModel.generations.enumerated()), id: \.element.id) { index, item in
-                                    reelCardView(item: item, index: index, size: pageSize)
-                                }
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(viewModel.generations.enumerated()), id: \.element.id) { index, item in
+                                reelCardView(item: item, index: index, size: pageSize)
                             }
                         }
                     }
@@ -56,8 +44,10 @@ struct CatalogView: View {
             }
         }
         .ignoresSafeArea()
+        #if os(iOS)
         .navigationBarHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        #endif
         .onAppear { viewModel.userId = appState.userId }
         .task {
             viewModel.userId = appState.userId
@@ -437,7 +427,7 @@ struct CommentsSheet: View {
                             .font(.system(size: 15))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
-                            .background(RoundedRectangle(cornerRadius: 20).fill(Color(.systemGray6)))
+                            .background(RoundedRectangle(cornerRadius: 20).fill(Color.gray.opacity(0.15)))
 
                         Button {
                             Task { await sendComment() }
@@ -457,9 +447,11 @@ struct CommentsSheet: View {
                 }
             }
             .navigationTitle("\(comments.count) Comments")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .automatic) {
                     Button("Done") { dismiss() }
                 }
             }
@@ -567,52 +559,7 @@ private struct CommentUserDTO: Decodable {
     let avatarUrl: String?
 }
 
-// MARK: - Full-screen AVPlayerLayer
-
-struct VideoPlayerLayer: UIViewRepresentable {
-    let player: AVPlayer
-
-    func makeUIView(context: Context) -> UIView {
-        let view = PlayerFillView()
-        view.player = player
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        (uiView as? PlayerFillView)?.player = player
-    }
-}
-
-private final class PlayerFillView: UIView {
-    override static var layerClass: AnyClass { AVPlayerLayer.self }
-    private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
-
-    var player: AVPlayer? {
-        get { playerLayer.player }
-        set { playerLayer.player = newValue }
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = .black
-        playerLayer.videoGravity = .resizeAspectFill
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        backgroundColor = .black
-        playerLayer.videoGravity = .resizeAspectFill
-    }
-}
-
-// MARK: - Share Sheet
-
-struct ShareSheet: UIViewControllerRepresentable {
-    let items: [Any]
-
-    func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
-    }
-
-    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
-}
+// VideoPlayerLayer and ShareSheet are now in PlatformAliases.swift
+// Use PlatformVideoPlayerView and PlatformShareSheet instead
+typealias VideoPlayerLayer = PlatformVideoPlayerView
+typealias ShareSheet = PlatformShareSheet

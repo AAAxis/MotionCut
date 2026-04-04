@@ -1,6 +1,8 @@
 import SwiftUI
 import StoreKit
+#if os(iOS)
 import RevenueCatUI
+#endif
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
@@ -215,6 +217,7 @@ struct SettingsView: View {
                         .background(theme.primary)
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                     }
+                    .buttonStyle(.plain)
 
                     // Info
                     Text("New users get 10 free credits. 1 credit = 1 second of AI video.")
@@ -227,8 +230,13 @@ struct SettingsView: View {
             }
         }
         .background(theme.background.ignoresSafeArea(.all))
+        #if os(iOS)
         .navigationBarHidden(true)
+        #else
+        .buttonStyle(.plain)
+        #endif
         .sheet(isPresented: $showBuyCredits) {
+            #if os(iOS)
             PaywallView()
                 .onPurchaseCompleted { customerInfo in
                     Task {
@@ -236,6 +244,10 @@ struct SettingsView: View {
                     }
                     showBuyCredits = false
                 }
+            #else
+            MacBuyCreditsPlaceholder(dismiss: { showBuyCredits = false })
+                .frame(minWidth: 400, minHeight: 300)
+            #endif
         }
         .alert("Sign in failed", isPresented: .init(get: { authError != nil }, set: { if !$0 { authError = nil } })) {
             Button("OK", role: .cancel) { authError = nil }

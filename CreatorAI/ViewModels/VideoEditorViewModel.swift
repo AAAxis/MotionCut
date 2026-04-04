@@ -545,6 +545,7 @@ class VideoEditorViewModel: ObservableObject {
     // MARK: - Music
 
     func configureAudioSessionForMusic() {
+        #if os(iOS)
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers, .defaultToSpeaker])
@@ -552,6 +553,8 @@ class VideoEditorViewModel: ObservableObject {
         } catch {
             print("[Music] Audio session setup failed: \(error)")
         }
+        #endif
+        // macOS: audio routing is automatic
     }
 
     /// Call after video player is ready to (re)claim session and start music.

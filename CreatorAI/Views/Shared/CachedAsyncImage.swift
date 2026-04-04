@@ -4,7 +4,7 @@ import SwiftUI
 struct CachedAsyncImage: View {
     let url: String
     let id: String
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
     @Environment(\.theme) var theme
 
     private var cacheFile: URL {
@@ -14,7 +14,7 @@ struct CachedAsyncImage: View {
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image)
+                Image(platformImage: image)
                     .resizable()
                     .scaledToFill()
             } else {
@@ -25,14 +25,15 @@ struct CachedAsyncImage: View {
         .task {
             // Check disk cache
             if FileManager.default.fileExists(atPath: cacheFile.path),
-               let cached = UIImage(contentsOfFile: cacheFile.path) {
+               let data = try? Data(contentsOf: cacheFile),
+               let cached = PlatformImage.from(data: data) {
                 image = cached
                 return
             }
             // Download and cache
             guard let url = URL(string: url),
                   let (data, _) = try? await URLSession.shared.data(from: url),
-                  let downloaded = UIImage(data: data) else { return }
+                  let downloaded = PlatformImage.from(data: data) else { return }
             image = downloaded
             try? data.write(to: cacheFile)
         }

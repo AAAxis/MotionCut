@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(iOS)
 import RevenueCatUI
+#endif
 
 struct CreateView: View {
     @EnvironmentObject var appState: AppState
@@ -77,6 +79,9 @@ struct CreateView: View {
             .padding(.bottom, 100)
         }
         .background(theme.background.ignoresSafeArea(.all))
+        #if os(macOS)
+        .buttonStyle(.plain)
+        #endif
         .alert("Error", isPresented: .init(
             get: { viewModel.errorMessage != nil },
             set: { if !$0 { viewModel.errorMessage = nil } }
@@ -86,6 +91,7 @@ struct CreateView: View {
             Text(viewModel.errorMessage ?? "")
         }
         .sheet(isPresented: $viewModel.showBuyCredits) {
+            #if os(iOS)
             PaywallView()
                 .onPurchaseCompleted { customerInfo in
                     let productId = customerInfo.nonSubscriptions
@@ -100,6 +106,10 @@ struct CreateView: View {
                         viewModel.showBuyCredits = false
                     }
                 }
+            #else
+            MacBuyCreditsPlaceholder(dismiss: { viewModel.showBuyCredits = false })
+                .frame(minWidth: 400, minHeight: 300)
+            #endif
         }
         .onAppear {
             Task { await appState.fetchCredits() }

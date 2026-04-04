@@ -1,12 +1,16 @@
 import SwiftUI
+#if os(iOS)
 import PhotosUI
+#endif
 
 struct LibraryView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @StateObject private var viewModel = LibraryViewModel()
     @State private var showVideoPicker = false
+    #if os(iOS)
     @State private var selectedVideoItem: PhotosPickerItem?
+    #endif
     @State private var isImporting = false
 
     var body: some View {
@@ -108,6 +112,7 @@ struct LibraryView: View {
         .onReceive(NotificationCenter.default.publisher(for: .switchToLibraryTab)) { _ in
             Task { await viewModel.loadGenerations() }
         }
+        #if os(iOS)
         .photosPicker(isPresented: $showVideoPicker, selection: $selectedVideoItem, matching: .videos)
         .onChange(of: selectedVideoItem) { newItem in
             guard let newItem else { return }
@@ -129,6 +134,7 @@ struct LibraryView: View {
                 NotificationCenter.default.post(name: .navigateToVideoEditor, object: params)
             }
         }
+        #endif
         .overlay {
             if isImporting {
                 ZStack {
@@ -226,7 +232,7 @@ struct LibraryView: View {
 
 struct GenerationListItem: View {
     let generation: Generation
-    let thumbnail: UIImage?
+    let thumbnail: PlatformImage?
     var isDownloading: Bool = false
     let onTap: () -> Void
     let onShare: () -> Void
@@ -238,7 +244,7 @@ struct GenerationListItem: View {
             HStack(spacing: 12) {
                 // Thumbnail
                 if let thumbnail {
-                    Image(uiImage: thumbnail)
+                    Image(platformImage: thumbnail)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .frame(width: 90, height: 60)

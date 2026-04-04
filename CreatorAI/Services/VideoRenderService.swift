@@ -1,7 +1,11 @@
 import Foundation
 import AVFoundation
 import QuartzCore
+#if canImport(UIKit)
 import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 // NOTE: This service requires ffmpeg-kit-ios-full SPM package.
 // Import FFmpegKit when the package is added to the Xcode project:
@@ -515,16 +519,19 @@ class VideoRenderService {
         )
     }
 
-    /// Load the app icon from the bundle (works even though it's in the asset catalog).
-    private static func appIconImage() -> UIImage? {
+    /// Load the app icon from the bundle.
+    private static func appIconImage() -> PlatformImage? {
+        #if os(iOS)
         if let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
            let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
            let files = primary["CFBundleIconFiles"] as? [String],
            let iconName = files.last {
             return UIImage(named: iconName)
         }
-        // Fallback: load directly from the asset catalog icon set
         return UIImage(named: "AppIcon60x60") ?? UIImage(named: "AppIcon")
+        #else
+        return NSImage(named: "AppIcon") ?? NSApplication.shared.applicationIconImage
+        #endif
     }
 
     private func exportComposition(_ composition: AVMutableComposition, videoComposition: AVMutableVideoComposition? = nil, audioMix: AVMutableAudioMix? = nil, to url: URL) async -> Bool {

@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.theholylabs
   deploymentTarget:
     iOS: "16.0"
+    macOS: "13.0"
   xcodeVersion: "15.0"
 
 settings:
@@ -30,6 +31,7 @@ packages:
     from: "8.0.0"
 
 targets:
+  # ── iOS Target ──────────────────────────────────────────────────────
   CreatorAI:
     type: application
     platform: iOS
@@ -64,3 +66,44 @@ targets:
       - package: Firebase
         product: FirebaseMessaging
       - package: GoogleSignIn
+
+  # ── macOS Target ────────────────────────────────────────────────────
+  CreatorAI-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: CreatorAI
+        excludes:
+          - Services/AppsFlyerService.swift
+          - Services/FCMService.swift
+    resources:
+      - path: CreatorAI/Resources/Assets.xcassets
+        type: folder
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.theholylabs.creator
+        PRODUCT_NAME: CreatorAI
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "CreatorAI needs microphone access for voiceover recording."
+        INFOPLIST_KEY_NSCameraUsageDescription: "CreatorAI needs camera access to record videos."
+    entitlements:
+      path: CreatorAI/Resources/CreatorAI_macOS.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.device.audio-input: true
+        com.apple.security.device.camera: true
+        com.apple.developer.applesignin:
+          - Default
+    dependencies:
+      - package: Supabase
+      - package: RevenueCat
+        product: RevenueCat
+      - package: RevenueCat
+        product: RevenueCatUI
+      - package: Firebase
+        product: FirebaseCore
+      - package: Firebase
+        product: FirebaseAuth

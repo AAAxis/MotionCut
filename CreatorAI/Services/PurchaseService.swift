@@ -1,6 +1,8 @@
 import Foundation
 import RevenueCat
+#if os(iOS)
 import RevenueCatUI
+#endif
 
 private let revenueCatAPIKey = "appl_KcCxWUWBcwWpTDjeoWMSASAXwLY"
 

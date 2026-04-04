@@ -2,48 +2,6 @@ import SwiftUI
 import AVKit
 import AVFoundation
 
-// MARK: - Aspect-fit video player
-
-struct AspectFitVideoPlayerView: UIViewRepresentable {
-    let player: AVPlayer
-
-    func makeUIView(context: Context) -> UIView {
-        let view = PlayerAspectFitView()
-        view.player = player
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {
-        (uiView as? PlayerAspectFitView)?.player = player
-    }
-}
-
-private final class PlayerAspectFitView: UIView {
-    override static var layerClass: AnyClass { AVPlayerLayer.self }
-    private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
-
-    private static let bg = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
-
-    var player: AVPlayer? {
-        get { playerLayer.player }
-        set { playerLayer.player = newValue }
-    }
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backgroundColor = Self.bg
-        playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.backgroundColor = Self.bg.cgColor
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        backgroundColor = Self.bg
-        playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.backgroundColor = Self.bg.cgColor
-    }
-}
-
 // MARK: - Compact Video Preview
 
 struct VideoPreviewView: View {
@@ -54,7 +12,7 @@ struct VideoPreviewView: View {
         ZStack {
             // Video
             if let player = viewModel.player {
-                AspectFitVideoPlayerView(player: player)
+                PlatformVideoPlayerView(player: player, videoGravity: .resizeAspectFill)
                     .onTapGesture {
                         viewModel.togglePlayPause()
                     }
@@ -113,6 +71,9 @@ struct VideoPreviewView: View {
                             .font(.system(size: 14))
                             .foregroundColor(.white)
                     }
+                    #if os(macOS)
+                    .buttonStyle(.plain)
+                    #endif
 
                     // Play/Pause
                     Button {
@@ -122,6 +83,9 @@ struct VideoPreviewView: View {
                             .font(.system(size: 16))
                             .foregroundColor(.white)
                     }
+                    #if os(macOS)
+                    .buttonStyle(.plain)
+                    #endif
 
                     // Time
                     Text("\(formatTime(viewModel.currentTime)) / \(formatTime(viewModel.duration))")
@@ -130,7 +94,7 @@ struct VideoPreviewView: View {
 
                     Spacer()
 
-                    // Music off button (removes voiceover/music track)
+                    // Music off button
                     if viewModel.selectedMusic != nil {
                         Button {
                             viewModel.clearMusic()
@@ -146,14 +110,16 @@ struct VideoPreviewView: View {
                             .padding(.vertical, 5)
                             .background(Capsule().fill(.black.opacity(0.5)))
                         }
+                        #if os(macOS)
+                        .buttonStyle(.plain)
+                        #endif
                     }
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-
                 .background(.black.opacity(0.4))
 
-                // Seek slider — full width, easy to tap
+                // Seek slider
                 SeekSlider(
                     progress: viewModel.duration > 0 ? viewModel.currentTime / viewModel.duration : 0,
                     onSeek: { pct in viewModel.seek(to: pct * 100) },

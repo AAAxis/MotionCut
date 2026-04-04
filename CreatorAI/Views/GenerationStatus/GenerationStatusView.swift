@@ -48,7 +48,9 @@ struct GenerationStatusView: View {
             Spacer()
         }
         .background(theme.background.ignoresSafeArea(.all))
+        #if os(iOS)
         .navigationBarHidden(true)
+        #endif
         .onAppear { viewModel.startPolling() }
         .onDisappear { viewModel.stopPolling() }
     }

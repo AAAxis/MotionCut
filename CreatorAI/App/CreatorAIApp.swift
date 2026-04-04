@@ -1,16 +1,19 @@
 import SwiftUI
 import FirebaseCore
+
+#if os(iOS)
 import FirebaseMessaging
 import GoogleSignIn
+#endif
 
+// MARK: - App Delegate
+
+#if os(iOS)
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         FirebaseApp.configure()
 
-        // Configure Google Sign-In
-        // iOS client ID from GoogleService-Info.plist
         if let clientID = FirebaseApp.app()?.options.clientID {
-            // Server client ID (client_type: 3) from google-services.json — needed for Firebase Auth
             let serverClientID = "918788275830-d98he7rtcdo4s3pgcfbjr9bf9thh2n1g.apps.googleusercontent.com"
             GIDSignIn.sharedInstance.configuration = GIDConfiguration(
                 clientID: clientID,
@@ -23,45 +26,102 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         return true
     }
 
-    // Forward remote notification token to Firebase
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Messaging.messaging().apnsToken = deviceToken
     }
 
-    // Handle Google Sign-In redirect
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
         return GIDSignIn.sharedInstance.handle(url)
     }
 }
+#else
+class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        FirebaseApp.configure()
+    }
+}
+#endif
+
+// MARK: - App
 
 @main
 struct CreatorAIApp: App {
+    #if os(iOS)
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    #else
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    #endif
+
     @StateObject private var appState = AppState()
+
     var body: some Scene {
         WindowGroup {
             ZStack {
-                // Fill entire window (including status bar area) so no black bar appears
+                #if os(iOS)
                 Color(UIColor.systemBackground)
                     .ignoresSafeArea(.all)
+                #else
+                Color(nsColor: .windowBackgroundColor)
+                    .ignoresSafeArea(.all)
+                #endif
+
                 ContentView()
                     .environmentObject(appState)
                     .environment(\.theme, AppColors(isDark: true))
                     .preferredColorScheme(.dark)
             }
+            #if os(iOS)
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.didBecomeActiveNotification)) { _ in
                 AppsFlyerService.shared.start()
                 AppsFlyerService.shared.requestTrackingAuthorization()
                 Task { await PurchaseService.shared.loadOfferings() }
             }
             .onOpenURL { url in
-                // Let Google Sign-In handle its callback
                 GIDSignIn.sharedInstance.handle(url)
-
                 if let action = DeeplinkService.parse(url) {
                     appState.pendingDeeplink = action
                 }
             }
+            #else
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                Task { await PurchaseService.shared.loadOfferings() }
+            }
+            .onOpenURL { url in
+                if let action = DeeplinkService.parse(url) {
+                    appState.pendingDeeplink = action
+                }
+            }
+            #endif
         }
+        #if os(macOS)
+        .defaultSize(width: 1400, height: 900)
+        .commands {
+            CommandGroup(replacing: .newItem) { }
+            CommandMenu("Editor") {
+                Button("Play / Pause") {
+                    NotificationCenter.default.post(name: .togglePlayback, object: nil)
+                }
+                .keyboardShortcut(.space, modifiers: [])
+
+                Button("Split Clip") {
+                    NotificationCenter.default.post(name: .splitClip, object: nil)
+                }
+                .keyboardShortcut("b", modifiers: .command)
+            }
+            CommandMenu("Window") {
+                Button("Catalog") {
+                    // Open catalog as separate window
+                }
+                .keyboardShortcut("k", modifiers: .command)
+            }
+        }
+        #endif
     }
+}
+
+// MARK: - macOS command notification names
+
+extension Notification.Name {
+    static let togglePlayback = Notification.Name("togglePlayback")
+    static let splitClip = Notification.Name("splitClip")
 }

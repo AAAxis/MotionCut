@@ -5,7 +5,7 @@ import AVFoundation
 class LibraryViewModel: ObservableObject {
     @Published var generations: [Generation] = []
     @Published var isLoading = false
-    @Published var thumbnails: [String: UIImage] = [:]
+    @Published var thumbnails: [String: PlatformImage] = [:]
     @Published var downloadingIds: Set<String> = []
 
     private let userId: String
@@ -109,11 +109,18 @@ class LibraryViewModel: ObservableObject {
     func shareVideo(_ generation: Generation) {
         guard let url = generation.videoFileURL else { return }
 
+        #if os(iOS)
         let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
            let rootVC = scene.windows.first?.rootViewController {
             rootVC.present(activityVC, animated: true)
         }
+        #else
+        let picker = NSSharingServicePicker(items: [url])
+        if let window = NSApp.keyWindow, let view = window.contentView {
+            picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
+        }
+        #endif
     }
 
     /// Download a cloud-only video to local storage. Returns the local URL on success.
@@ -152,7 +159,8 @@ class LibraryViewModel: ObservableObject {
             // Check disk cache first
             let cachedPath = thumbDir.appendingPathComponent("\(generation.id).jpg")
             if FileManager.default.fileExists(atPath: cachedPath.path),
-               let cached = UIImage(contentsOfFile: cachedPath.path) {
+               let data = try? Data(contentsOf: cachedPath),
+               let cached = PlatformImage.from(data: data) {
                 newThumbnails[generation.id] = cached
                 continue
             }
@@ -162,7 +170,7 @@ class LibraryViewModel: ObservableObject {
             if let image = await ThumbnailService.shared.generateThumbnail(for: url) {
                 newThumbnails[generation.id] = image
                 // Cache to disk
-                if let data = image.jpegData(compressionQuality: 0.7) {
+                if let data = image.jpegData(quality: 0.7) {
                     try? data.write(to: cachedPath)
                 }
             }

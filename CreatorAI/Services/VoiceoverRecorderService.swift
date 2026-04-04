@@ -19,6 +19,7 @@ final class VoiceoverRecorderService: NSObject, ObservableObject, AVAudioRecorde
     // MARK: - Permission
 
     func requestPermission() async -> Bool {
+        #if os(iOS)
         if #available(iOS 17.0, *) {
             return await AVAudioApplication.requestRecordPermission()
         } else {
@@ -28,6 +29,14 @@ final class VoiceoverRecorderService: NSObject, ObservableObject, AVAudioRecorde
                 }
             }
         }
+        #else
+        // macOS: use AVCaptureDevice permission
+        return await withCheckedContinuation { continuation in
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+        #endif
     }
 
     // MARK: - Recording
@@ -39,6 +48,7 @@ final class VoiceoverRecorderService: NSObject, ObservableObject, AVAudioRecorde
             return false
         }
 
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
@@ -47,6 +57,7 @@ final class VoiceoverRecorderService: NSObject, ObservableObject, AVAudioRecorde
             print("[Voiceover] Audio session setup failed: \(error)")
             return false
         }
+        #endif
 
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("voiceover-\(UUID().uuidString)")
@@ -71,7 +82,6 @@ final class VoiceoverRecorderService: NSObject, ObservableObject, AVAudioRecorde
                 self.recordedFileURL = nil
             }
 
-            // Timer for duration display — must be on main run loop
             await MainActor.run {
                 self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
                     guard let self, let rec = self.recorder, rec.isRecording else { return }
@@ -97,9 +107,10 @@ final class VoiceoverRecorderService: NSObject, ObservableObject, AVAudioRecorde
 
         isRecording = false
 
-        // Restore playback audio session
+        #if os(iOS)
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers, .defaultToSpeaker])
         try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
     }
 
     func deleteRecording() {

@@ -16,7 +16,7 @@ struct ClipsTimelineView: View {
     private let basePixelsPerSecond: CGFloat = 50
     @State private var zoomScale: CGFloat = 1.0
     private var pixelsPerSecond: CGFloat { basePixelsPerSecond * zoomScale }
-    private let screenPadding: CGFloat = UIScreen.main.bounds.width / 2
+    private let screenPadding: CGFloat = ScreenSize.width / 2
 
     private var totalDuration: Double {
         if viewModel.clips.count > 1 {
@@ -199,11 +199,14 @@ struct ClipsTimelineView: View {
                                 .stroke(theme.border, lineWidth: 1)
                         )
                     Image(systemName: "plus")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(.system(size: 14, weight: .medium))
                         .foregroundColor(theme.primary)
                 }
-                .frame(width: 44, height: thumbHeight)
+                .frame(width: 32, height: thumbHeight)
             }
+            #if os(macOS)
+            .buttonStyle(.plain)
+            #endif
         }
         .frame(height: thumbHeight)
         .padding(.bottom, 6)
@@ -424,7 +427,7 @@ struct FilmstripClip: View {
     let onTrimEndChanged: (CGFloat) -> Void
 
     @Environment(\.theme) var theme
-    @State private var thumbnailFrames: [UIImage] = []
+    @State private var thumbnailFrames: [PlatformImage] = []
     @State private var isLoadingThumbs = true
     @State private var showRemoveButton = false
 
@@ -466,7 +469,7 @@ struct FilmstripClip: View {
                     GeometryReader { geo in
                         HStack(spacing: 0) {
                             ForEach(Array(thumbnailFrames.enumerated()), id: \.offset) { _, img in
-                                Image(uiImage: img)
+                                Image(platformImage: img)
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                                     .frame(width: geo.size.width / CGFloat(max(1, thumbnailFrames.count)),
@@ -536,12 +539,12 @@ struct FilmstripClip: View {
         let dur = clip.sourceDuration ?? (clip.beatDuration ?? 3.0)
         guard dur > 0 else { return }
 
-        var images: [UIImage] = []
+        var images: [PlatformImage] = []
         for i in 0..<frameCount {
             let time = CMTime(seconds: (Double(i) / Double(frameCount)) * dur, preferredTimescale: 600)
             do {
                 let cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-                images.append(UIImage(cgImage: cgImage))
+                images.append(PlatformImage.from(cgImage: cgImage))
             } catch { break }
         }
 

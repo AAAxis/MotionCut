@@ -100,9 +100,11 @@ struct BuyCreditsView: View {
                 Spacer()
             }
             .background(theme.background.ignoresSafeArea(.all))
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .automatic) {
                     Button("Done") { dismiss() }
                 }
             }

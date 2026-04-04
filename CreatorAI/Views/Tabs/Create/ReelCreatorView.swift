@@ -1,5 +1,7 @@
 import SwiftUI
+#if os(iOS)
 import PhotosUI
+#endif
 
 struct ReelCreatorView: View {
     @ObservedObject var viewModel: CreateViewModel
@@ -147,7 +149,31 @@ struct ReelCreatorView: View {
             .padding(.bottom, 20)
 
             // Generate Button
-            Button {
+            HStack(spacing: 8) {
+                if viewModel.isLoading {
+                    ProgressView()
+                        .tint(.white)
+                    Text("Generating...")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(.white)
+                } else {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 20))
+                    Text("Generate Reel · \(viewModel.reelCreditCost) credits")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(theme.primary)
+            )
+            .opacity(viewModel.isLoading ? 0.7 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard !viewModel.isLoading else { return }
                 dismissKeyboard()
                 Task {
                     if await viewModel.generateReel(appState: appState) {
@@ -161,31 +187,7 @@ struct ReelCreatorView: View {
                         NotificationCenter.default.post(name: .switchToLibraryTab, object: nil)
                     }
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .tint(.white)
-                        Text("Generating...")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.white)
-                    } else {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 20))
-                        Text("Generate Reel · \(viewModel.reelCreditCost) credits")
-                            .font(.system(size: 17, weight: .semibold))
-                    }
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(theme.primary)
-                )
-                .opacity(viewModel.isLoading ? 0.7 : 1)
             }
-            .disabled(viewModel.isLoading)
         }
         .overlay {
             if showLaunchCelebration {
@@ -261,15 +263,17 @@ struct ReferenceVideoPickerView: View {
     @Binding var referenceVideoURL: URL?
     var style: Style = .fullWidth
     @Environment(\.theme) var theme
+    #if os(iOS)
     @State private var selectedItem: PhotosPickerItem?
-    @State private var thumbnailImage: UIImage?
+    #endif
+    @State private var thumbnailImage: PlatformImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if let url = referenceVideoURL {
                 HStack(spacing: 12) {
                     if let img = thumbnailImage {
-                        Image(uiImage: img)
+                        Image(platformImage: img)
                             .resizable()
                             .scaledToFill()
                             .frame(width: 80, height: 80)
@@ -297,7 +301,9 @@ struct ReferenceVideoPickerView: View {
                     Spacer()
                     Button {
                         referenceVideoURL = nil
+                        #if os(iOS)
                         selectedItem = nil
+                        #endif
                         thumbnailImage = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -315,6 +321,7 @@ struct ReferenceVideoPickerView: View {
                         )
                 )
             } else {
+                #if os(iOS)
                 PhotosPicker(
                     selection: $selectedItem,
                     matching: .videos,
@@ -335,6 +342,10 @@ struct ReferenceVideoPickerView: View {
                         }
                     }
                 }
+                #else
+                // macOS: use file importer instead of PhotosPicker
+                attachmentButtonLabel
+                #endif
             }
         }
         .onChange(of: referenceVideoURL) { url in

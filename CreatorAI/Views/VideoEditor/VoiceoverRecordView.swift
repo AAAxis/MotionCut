@@ -104,18 +104,19 @@ struct VoiceoverRecordView: View {
                             viewModel.setVoiceover(url: url)
                         }
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 6) {
                             Image(systemName: "stop.fill")
-                                .font(.system(size: 16))
+                                .font(.system(size: 12))
                             Text("Stop")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
                         .background(theme.error)
                         .clipShape(Capsule())
                     }
+                    .buttonStyle(.plain)
                 } else {
                     // Record
                     Button {
@@ -124,19 +125,20 @@ struct VoiceoverRecordView: View {
                             await recorder.startRecording()
                         }
                     } label: {
-                        HStack(spacing: 8) {
+                        HStack(spacing: 6) {
                             Circle()
                                 .fill(theme.error)
-                                .frame(width: 12, height: 12)
+                                .frame(width: 8, height: 8)
                             Text(viewModel.voiceoverFileURL != nil ? "Re-record" : "Record")
-                                .font(.system(size: 16, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 8)
                         .background(theme.primary)
                         .clipShape(Capsule())
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.bottom, 32)

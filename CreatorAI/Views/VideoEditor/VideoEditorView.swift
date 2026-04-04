@@ -1,6 +1,8 @@
 import SwiftUI
 import AVKit
+#if os(iOS)
 import PhotosUI
+#endif
 
 struct VideoEditorView: View {
     let params: VideoEditorParams
@@ -11,7 +13,9 @@ struct VideoEditorView: View {
     @State private var showSubsSheet = false
     @State private var showMusicFilePicker = false
     @State private var showGalleryPicker = false
+    #if os(iOS)
     @State private var selectedVideoItem: PhotosPickerItem?
+    #endif
     @State private var isImportingClip = false
 
     init(params: VideoEditorParams) {
@@ -77,7 +81,7 @@ struct VideoEditorView: View {
                     .clipped()
                     .frame(maxWidth: .infinity)
             }
-            .frame(height: UIScreen.main.bounds.height * 0.42)
+            .frame(height: ScreenSize.height * 0.42)
 
             // Timeline + tracks
             ClipsTimelineView(viewModel: viewModel)
@@ -110,7 +114,9 @@ struct VideoEditorView: View {
                 }
             }
         }
+        #if os(iOS)
         .navigationBarHidden(true)
+        #endif
         .onDisappear {
             viewModel.cleanup()
         }
@@ -122,7 +128,7 @@ struct VideoEditorView: View {
                 )
             }
         }
-        .fullScreenCover(isPresented: $viewModel.showAiPrompt) {
+        .sheet(isPresented: $viewModel.showAiPrompt) {
             SheetWrapper(title: "AI Clip", isPresented: $viewModel.showAiPrompt) {
                 AiClipSheet(viewModel: viewModel)
             }
@@ -150,36 +156,39 @@ struct VideoEditorView: View {
                 Task { await viewModel.selectMusic(track) }
             }
         }
-        .fullScreenCover(isPresented: $showSubsSheet) {
+        .sheet(isPresented: $showSubsSheet) {
             SheetWrapper(title: "Subtitles", isPresented: $showSubsSheet) {
                 SubtitlesTabView(viewModel: viewModel)
             }
         }
-        .fullScreenCover(isPresented: $viewModel.showSpeedSheet) {
+        .sheet(isPresented: $viewModel.showSpeedSheet) {
             SheetWrapper(title: "Speed", isPresented: $viewModel.showSpeedSheet) {
                 SpeedControlView(viewModel: viewModel)
             }
         }
-        .fullScreenCover(isPresented: $viewModel.showAspectRatioSheet) {
+        .sheet(isPresented: $viewModel.showAspectRatioSheet) {
             SheetWrapper(title: "Aspect Ratio", isPresented: $viewModel.showAspectRatioSheet) {
                 AspectRatioView(viewModel: viewModel)
             }
         }
-        .fullScreenCover(isPresented: $viewModel.showVoiceoverSheet) {
+        .sheet(isPresented: $viewModel.showVoiceoverSheet) {
             SheetWrapper(title: "Voiceover", isPresented: $viewModel.showVoiceoverSheet) {
                 VoiceoverRecordView(viewModel: viewModel)
             }
         }
-        .fullScreenCover(isPresented: $viewModel.showPexelsSheet) {
+        .sheet(isPresented: $viewModel.showPexelsSheet) {
             PexelsSearchSheet(viewModel: viewModel)
         }
+        #if os(iOS)
         .photosPicker(isPresented: $showGalleryPicker, selection: $selectedVideoItem, matching: .videos)
+        #endif
         .onChange(of: viewModel.showAddClipPicker) { show in
             if show {
                 showGalleryPicker = true
                 viewModel.showAddClipPicker = false
             }
         }
+        #if os(iOS)
         .onChange(of: selectedVideoItem) { newItem in
             guard let newItem else { return }
             selectedVideoItem = nil
@@ -192,6 +201,7 @@ struct VideoEditorView: View {
                 viewModel.addClipFromGallery(url: dest)
             }
         }
+        #endif
         .task {
             viewModel.configureAudioSessionForMusic()
             viewModel.rebuildPlaylistIfNeeded()

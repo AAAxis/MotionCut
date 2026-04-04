@@ -137,6 +137,17 @@ struct PexelsSearchSheet: View {
         NavigationStack {
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
+                    #if os(macOS)
+                    TextField("Search stock videos...", text: $viewModel.pexelsQuery)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            Task { await viewModel.searchPexels() }
+                        }
+
+                    Button("Search") {
+                        Task { await viewModel.searchPexels() }
+                    }
+                    #else
                     TextField("Search stock videos...", text: $viewModel.pexelsQuery)
                         .font(.system(size: 16))
                         .textFieldStyle(.plain)
@@ -154,6 +165,7 @@ struct PexelsSearchSheet: View {
                             .frame(width: 40, height: 40)
                             .background(Circle().fill(theme.primary))
                     }
+                    #endif
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
@@ -231,7 +243,9 @@ struct PexelsSearchSheet: View {
             }
             .background(theme.background)
             .navigationTitle(viewModel.pexelsReplaceMode ? "Replace Clip" : "Add Stock Clip")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button {

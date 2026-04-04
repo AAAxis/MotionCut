@@ -181,32 +181,32 @@ struct AdCreatorView: View {
             }
 
             // Generate Button (all local: script → Pexels → TTS → editor)
-            Button {
+            HStack(spacing: 8) {
+                if viewModel.isGeneratingFreeReel {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 20))
+                    Text("Generate · 10 credits")
+                        .font(.system(size: 17, weight: .semibold))
+                }
+            }
+            .foregroundColor(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 18)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(theme.primary)
+            )
+            .opacity(viewModel.isGeneratingFreeReel ? 0.7 : 1)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                guard !viewModel.isGeneratingFreeReel else { return }
                 dismissKeyboard()
                 Task {
                     await viewModel.generateFreeReel(appState: appState)
                 }
-            } label: {
-                HStack(spacing: 8) {
-                    if viewModel.isGeneratingFreeReel {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "bolt.fill")
-                            .font(.system(size: 20))
-                        Text("Generate · 10 credits")
-                            .font(.system(size: 17, weight: .semibold))
-                    }
-                }
-                .foregroundColor(.white)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 18)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(theme.primary)
-                )
-                .opacity(viewModel.isGeneratingFreeReel ? 0.7 : 1)
             }
-            .disabled(viewModel.isGeneratingFreeReel)
         }
     }
 }

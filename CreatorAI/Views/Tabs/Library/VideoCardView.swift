@@ -2,7 +2,7 @@ import SwiftUI
 
 struct VideoCardView: View {
     let generation: Generation
-    let thumbnail: UIImage?
+    let thumbnail: PlatformImage?
     let onShare: () -> Void
     let onDelete: () -> Void
     var onEdit: (() -> Void)?
@@ -14,7 +14,7 @@ struct VideoCardView: View {
             // Thumbnail
             ZStack {
                 if let thumbnail = thumbnail {
-                    Image(uiImage: thumbnail)
+                    Image(platformImage: thumbnail)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                 } else {

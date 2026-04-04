@@ -66,7 +66,9 @@ class AppState: ObservableObject {
         // Cache userId for FCM token refresh (mirrors Android SharedPreferences)
         UserDefaults.standard.set(userId, forKey: "cached_user_id")
         // Register FCM token with Supabase
+        #if os(iOS)
         FCMService.shared.registerTokenForUser(userId: userId)
+        #endif
         PurchaseService.shared.configure(userId: userId)
         Task { await fetchCredits() }
     }

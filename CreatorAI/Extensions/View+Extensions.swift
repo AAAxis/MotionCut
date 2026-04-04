@@ -1,10 +1,6 @@
 import SwiftUI
-import UIKit
 
-/// Dismisses the keyboard (resign first responder).
-func dismissKeyboard() {
-    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-}
+// dismissKeyboard() is now in PlatformAliases.swift (cross-platform)
 
 extension View {
     func cardStyle(_ theme: AppColors) -> some View {
