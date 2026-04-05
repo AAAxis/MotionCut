@@ -1,4 +1,3 @@
-#if os(macOS)
 import SwiftUI
 import AVKit
 import UniformTypeIdentifiers
@@ -21,28 +20,28 @@ struct MacWorkspaceView: View {
     }
 
     var body: some View {
-        VSplitView {
+        VStack(spacing: 0) {
             // ── Top: Browser | Preview | Inspector ──
-            HSplitView {
+            HStack(spacing: 0) {
                 // Left: Media Browser
                 if showBrowser {
                     MediaBrowserPanel(libraryVM: libraryVM, onSelect: loadGeneration, onImport: loadParams)
-                        .frame(minWidth: 200, idealWidth: 280, maxWidth: 400)
+                        .frame(width: 280)
                 }
 
                 // Center: Video Preview
                 VideoPreviewPanel(viewModel: activeEditor)
                     .id(editorId)
-                    .frame(minWidth: 300)
+                    .frame(maxWidth: .infinity)
 
                 // Right: Inspector
                 if showInspector {
                     InspectorPanel(viewModel: activeEditor)
                         .id(editorId)
-                        .frame(minWidth: 220, idealWidth: 300, maxWidth: 400)
+                        .frame(width: 300)
                 }
             }
-            .frame(minHeight: 300)
+            .frame(maxHeight: .infinity)
 
             // ── Bottom: Timeline ──
             MacTimelinePanel(viewModel: activeEditor, onVideoDropped: { fileURL in
@@ -54,7 +53,7 @@ struct MacWorkspaceView: View {
                 loadParams(params)
             })
                 .id(editorId)
-                .frame(minHeight: 150, idealHeight: 250)
+                .frame(height: 250)
         }
         .background(theme.background)
         .overlay(alignment: .bottom) {
@@ -119,7 +118,11 @@ struct MacWorkspaceView: View {
             ToolbarItem(id: "catalog", placement: .primaryAction) {
                 Button {
                     if let url = URL(string: "https://www.creatorai.art/en/catalog") {
+                        #if os(macOS)
                         NSWorkspace.shared.open(url)
+                        #else
+                        UIApplication.shared.open(url)
+                        #endif
                     }
                 } label: {
                     Label("Catalog", systemImage: "rectangle.grid.2x2")
@@ -263,8 +266,24 @@ struct MediaBrowserPanel: View {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 8) {
                         ForEach(libraryVM.generations) { gen in
-                            MediaBrowserItem(generation: gen, thumbnail: libraryVM.thumbnails[gen.id])
-                                .onTapGesture { onSelect(gen) }
+                            MediaBrowserItem(generation: gen, thumbnail: libraryVM.thumbnails[gen.id], onDelete: {
+                                Task { await libraryVM.deleteGeneration(gen) }
+                            })
+                                .contentShape(Rectangle())
+                                .gesture(TapGesture().onEnded { onSelect(gen) })
+                                .contextMenu {
+                                    Button {
+                                        onSelect(gen)
+                                    } label: {
+                                        Label("Open in Editor", systemImage: "play.rectangle")
+                                    }
+                                    Divider()
+                                    Button(role: .destructive) {
+                                        Task { await libraryVM.deleteGeneration(gen) }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                         }
                     }
                     .padding(8)
@@ -335,30 +354,45 @@ struct MediaBrowserPanel: View {
 struct MediaBrowserItem: View {
     let generation: Generation
     let thumbnail: PlatformImage?
+    var onDelete: (() -> Void)?
     @Environment(\.theme) var theme
+    @State private var isHovering = false
 
     var body: some View {
         VStack(spacing: 4) {
-            ZStack {
-                if let thumbnail {
-                    Image(platformImage: thumbnail)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    Rectangle().fill(theme.surfaceElevated)
-                    Image(systemName: "film")
-                        .font(.system(size: 20))
-                        .foregroundColor(theme.textTertiary)
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    if let thumbnail {
+                        Image(platformImage: thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Rectangle().fill(theme.surfaceElevated)
+                        Image(systemName: "film")
+                            .font(.system(size: 20))
+                            .foregroundColor(theme.textTertiary)
+                    }
+                }
+                .frame(height: 70)
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                // Delete X button — visible on hover
+                if isHovering, let onDelete {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.white)
+                        .shadow(color: .black.opacity(0.5), radius: 2)
+                        .padding(4)
+                        .onTapGesture { onDelete() }
                 }
             }
-            .frame(height: 70)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
 
             Text(generation.videoName)
                 .font(.system(size: 10))
                 .foregroundColor(theme.textSecondary)
                 .lineLimit(1)
         }
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -730,4 +764,3 @@ struct MacTimelinePanel: View {
         .buttonStyle(.plain)
     }
 }
-#endif

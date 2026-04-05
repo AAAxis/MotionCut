@@ -13,7 +13,6 @@ struct MainTabView: View {
                     switch route {
                     case .videoEditor(let params):
                         #if os(macOS)
-                        // macOS: editor is inline in workspace, don't push
                         EmptyView()
                         #else
                         VideoEditorView(params: params)
@@ -59,14 +58,12 @@ struct MainTabView: View {
                 }
             }
         }
-        #if os(macOS)
         .onReceive(NotificationCenter.default.publisher(for: .togglePlayback)) { _ in
             // Forward to video editor if active
         }
         .onReceive(NotificationCenter.default.publisher(for: .splitClip)) { _ in
             // Forward to video editor if active
         }
-        #endif
         .onChange(of: appState.pendingDeeplink) { newValue in
             guard let action = newValue else { return }
             appState.pendingDeeplink = nil
@@ -92,7 +89,6 @@ struct MainTabView: View {
     @ViewBuilder
     private var mainContent: some View {
         #if os(macOS)
-        // macOS: Final Cut Pro-style workspace
         MacWorkspaceView()
         #else
         // iOS: bottom tab bar

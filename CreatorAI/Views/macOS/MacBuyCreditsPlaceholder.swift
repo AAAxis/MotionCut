@@ -1,4 +1,3 @@
-#if os(macOS)
 import SwiftUI
 import RevenueCat
 
@@ -32,7 +31,9 @@ struct MacBuyCreditsPlaceholder: View {
                     .font(.system(size: 13))
                     .foregroundColor(theme.primary)
                     .onTapGesture { dismiss() }
+                    #if os(macOS)
                     .cursor(.pointingHand)
+                    #endif
             }
             .padding(.bottom, 4)
 
@@ -143,6 +144,7 @@ struct MacBuyCreditsPlaceholder: View {
     }
 }
 
+#if os(macOS)
 extension View {
     func cursor(_ cursor: NSCursor) -> some View {
         self.onHover { hovering in

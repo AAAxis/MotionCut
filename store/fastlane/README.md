@@ -29,7 +29,7 @@ Diagnostic lane to list ALL existing localizations
 [bundle exec] fastlane ios upload_aso
 ```
 
-Upload screenshots and metadata (20 languages) to App Store Connect
+Upload screenshots and metadata (all languages) to App Store Connect
 
 ### ios add_locales_and_upload
 
@@ -38,6 +38,27 @@ Upload screenshots and metadata (20 languages) to App Store Connect
 ```
 
 Add missing locales via Spaceship then push metadata
+
+----
+
+
+## Mac
+
+### mac upload_aso
+
+```sh
+[bundle exec] fastlane mac upload_aso
+```
+
+Upload macOS metadata to App Store Connect (all languages)
+
+### mac add_locales_and_upload
+
+```sh
+[bundle exec] fastlane mac add_locales_and_upload
+```
+
+Add missing locales and upload macOS metadata
 
 ----
 

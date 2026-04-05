@@ -708,7 +708,7 @@ class VideoEditorViewModel: ObservableObject {
     @Published var aiGenerating = false
     @Published var aiStatus = ""
 
-    func generateAiClip() async {
+    func generateAiClip(modelId: String = "bytedance/seedance-1-lite", duration: Int = 5) async {
         let prompt = aiPrompt.trimmingCharacters(in: .whitespaces)
         guard !prompt.isEmpty else { return }
         aiGenerating = true
@@ -717,10 +717,10 @@ class VideoEditorViewModel: ObservableObject {
 
         do {
             let response = try await GenerationService.shared.startAICreate(
-                modelId: "fal-ai/pixverse/v4/text-to-video",
+                modelId: modelId,
                 prompt: prompt,
                 imageUrl: nil,
-                duration: 5,
+                duration: duration,
                 userId: userId
             )
 
@@ -744,7 +744,7 @@ class VideoEditorViewModel: ObservableObject {
                         id: nextClipId,
                         uri: clipFile.path,
                         name: "AI Clip",
-                        sourceDuration: 5.0,
+                        sourceDuration: Double(duration),
                         localUri: clipFile.path
                     )
                     clips.append(clip)
