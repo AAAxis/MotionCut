@@ -116,30 +116,84 @@ async function upsertUser(env, data) {
 // ── fal.ai helpers ───────────────────────────────────────────────────
 const FAL_VIDEO_MODEL = 'fal-ai/pixverse/v4/text-to-video';
 
-// All models route through fal.ai PixVerse (text-to-video)
-// or fal.ai Kling (image-to-video) since we don't have Replicate key
+// Per-model fal.ai endpoint mapping. Keys match the modelId sent from the
+// frontend (src/components/create/unified-input.tsx). Each entry provides:
+//   - t2vFal: fal endpoint for text-to-video
+//   - i2vFal: fal endpoint for image-to-video (optional; falls back to t2vFal)
+//   - t2v(prompt, duration): build request body for text-to-video
+//   - i2v(prompt, imageUrl, duration): build request body for image-to-video
+// NOTE: Endpoint paths and parameter names are the current best guess from
+// fal.ai docs as of 2026-04. If a model returns 404 or "invalid input",
+// verify the path at https://fal.ai/models and adjust here.
 const MODEL_CONFIGS = {
+  // ── Budget ──
   'bytedance/seedance-1-lite': {
-    fal: 'fal-ai/pixverse/v4/text-to-video',
-    t2v: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16', quality: 'high' }),
-    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16' }),
+    t2vFal: 'fal-ai/bytedance/seedance/v1/lite/text-to-video',
+    i2vFal: 'fal-ai/bytedance/seedance/v1/lite/image-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16', resolution: '720p' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image_url: imageUrl, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16', resolution: '720p' }),
   },
+  'wan-video/wan-2.5-t2v-fast': {
+    t2vFal: 'fal-ai/wan/v2.5/text-to-video/fast',
+    i2vFal: 'fal-ai/wan/v2.5/image-to-video/fast',
+    t2v: (prompt, duration) => ({ prompt, duration: String(duration <= 5 ? 5 : 8), aspect_ratio: '9:16', resolution: '720p' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image_url: imageUrl, duration: String(duration <= 5 ? 5 : 8), aspect_ratio: '9:16', resolution: '720p' }),
+  },
+  // ── Standard ──
   'bytedance/seedance-1-pro': {
-    fal: 'fal-ai/pixverse/v4/text-to-video',
-    t2v: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16', quality: 'high' }),
-    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16' }),
+    t2vFal: 'fal-ai/bytedance/seedance/v1/pro/text-to-video',
+    i2vFal: 'fal-ai/bytedance/seedance/v1/pro/image-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16', resolution: '1080p' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image_url: imageUrl, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16', resolution: '1080p' }),
   },
-  'minimax/video-01': {
-    fal: 'fal-ai/pixverse/v4/text-to-video',
-    t2v: (prompt) => ({ prompt, duration: '5', aspect_ratio: '9:16', quality: 'high' }),
-    i2v: (prompt, imageUrl) => ({ prompt, image: imageUrl, duration: '5', aspect_ratio: '9:16' }),
+  'kwaivgi/kling-v1.6-standard': {
+    t2vFal: 'fal-ai/kling-video/v1.6/standard/text-to-video',
+    i2vFal: 'fal-ai/kling-video/v1.6/standard/image-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image_url: imageUrl, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16' }),
   },
   'kwaivgi/kling-v2.1': {
-    fal: 'fal-ai/pixverse/v4/text-to-video',
-    t2v: (prompt, duration) => ({ prompt, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16', quality: 'high' }),
-    i2v: (prompt, imageUrl, duration) => ({ prompt, image: imageUrl, duration: duration <= 5 ? '5' : '8', aspect_ratio: '9:16' }),
+    t2vFal: 'fal-ai/kling-video/v2.1/master/text-to-video',
+    i2vFal: 'fal-ai/kling-video/v2.1/master/image-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image_url: imageUrl, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16' }),
+  },
+  'kwaivgi/kling-v3.0': {
+    t2vFal: 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
+    i2vFal: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image_url: imageUrl, duration: String(duration <= 5 ? 5 : 10), aspect_ratio: '9:16' }),
+  },
+  // ── Premium ──
+  'minimax/video-01': {
+    t2vFal: 'fal-ai/minimax/hailuo-02/standard/text-to-video',
+    i2vFal: 'fal-ai/minimax/hailuo-02/standard/image-to-video',
+    t2v: (prompt) => ({ prompt, prompt_optimizer: true }),
+    i2v: (prompt, imageUrl) => ({ prompt, image_url: imageUrl, prompt_optimizer: true }),
+  },
+  'google/veo-3.1-fast': {
+    t2vFal: 'fal-ai/veo3/fast',
+    i2vFal: 'fal-ai/veo3/fast/image-to-video',
+    t2v: (prompt) => ({ prompt, aspect_ratio: '9:16', generate_audio: true }),
+    i2v: (prompt, imageUrl) => ({ prompt, image_url: imageUrl, aspect_ratio: '9:16', generate_audio: true }),
+  },
+  'google/veo-3.1': {
+    t2vFal: 'fal-ai/veo3',
+    i2vFal: 'fal-ai/veo3/image-to-video',
+    t2v: (prompt) => ({ prompt, aspect_ratio: '9:16', generate_audio: true }),
+    i2v: (prompt, imageUrl) => ({ prompt, image_url: imageUrl, aspect_ratio: '9:16', generate_audio: true }),
+  },
+  'runway/gen-4.5': {
+    // Runway Gen-4 on fal: image-to-video is the primary mode.
+    t2vFal: 'fal-ai/runway-gen4/turbo/image-to-video',
+    i2vFal: 'fal-ai/runway-gen4/turbo/image-to-video',
+    t2v: (prompt, duration) => ({ prompt, duration: duration <= 5 ? 5 : 10, aspect_ratio: '9:16' }),
+    i2v: (prompt, imageUrl, duration) => ({ prompt, image_url: imageUrl, duration: duration <= 5 ? 5 : 10, aspect_ratio: '9:16' }),
   },
 };
+
+// Default config used when an unknown modelId is sent.
+const DEFAULT_MODEL_CONFIG = MODEL_CONFIGS['bytedance/seedance-1-lite'];
 
 async function falSubmit(env, modelId, input) {
   const res = await fetch(`https://queue.fal.run/${modelId}`, {
@@ -154,8 +208,9 @@ async function falSubmit(env, modelId, input) {
 }
 
 async function falStatus(env, modelId, requestId) {
-  // fal.ai status uses the base model path (e.g., fal-ai/pixverse) not the full endpoint
-  const basePath = modelId.replace(/\/v\d+\/.*$/, '');
+  // fal.ai status uses the base model path (e.g., fal-ai/pixverse) not the full endpoint.
+  // Strip the trailing /v{version}/... segment. Handles dotted versions like v1.6, v2.5.
+  const basePath = modelId.replace(/\/v[\d.]+\/.*$/, '').replace(/\/(text-to-video|image-to-video|fast)(\/.*)?$/, '');
   const res = await fetch(`https://queue.fal.run/${basePath}/requests/${requestId}/status`, {
     headers: { 'Authorization': `Key ${env.FAL_KEY}` },
   });
@@ -400,20 +455,17 @@ async function handleCreateGenerate(request, env) {
 
   // Pick model + build input
   const hasImage = !!imageUrl;
-  let selectedModel = modelId;
+  let selectedModel = modelId && MODEL_CONFIGS[modelId] ? modelId : 'bytedance/seedance-1-lite';
+  const config = MODEL_CONFIGS[selectedModel] || DEFAULT_MODEL_CONFIG;
   let input;
   let falModelId;
 
   if (hasImage) {
-    if (!selectedModel || !MODEL_CONFIGS[selectedModel]?.i2v) selectedModel = 'kwaivgi/kling-v2.1';
-    const config = MODEL_CONFIGS[selectedModel];
     input = config.i2v(prompt, imageUrl, duration);
-    falModelId = config.fal;
+    falModelId = config.i2vFal || config.t2vFal;
   } else {
-    if (!selectedModel || !MODEL_CONFIGS[selectedModel]?.t2v) selectedModel = 'bytedance/seedance-1-lite';
-    const config = MODEL_CONFIGS[selectedModel];
     input = config.t2v(prompt, duration);
-    falModelId = config.fal;
+    falModelId = config.t2vFal;
   }
 
   // Submit to fal.ai queue
