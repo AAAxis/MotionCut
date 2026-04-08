@@ -196,7 +196,8 @@ const MODEL_CONFIGS = {
 const DEFAULT_MODEL_CONFIG = MODEL_CONFIGS['bytedance/seedance-1-lite'];
 
 async function falSubmit(env, modelId, input) {
-  const res = await fetch(`https://queue.fal.run/${modelId}`, {
+  const url = `https://queue.fal.run/${modelId}`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Authorization': `Key ${env.FAL_KEY}`,
@@ -204,25 +205,73 @@ async function falSubmit(env, modelId, input) {
     },
     body: JSON.stringify(input),
   });
-  return res.json();
+  const data = await safeJson(res);
+  console.log('[falSubmit]', { url, httpStatus: res.status, data: JSON.stringify(data).slice(0, 500) });
+  return data;
+}
+
+// Compute the fal queue path for status/result polling. fal.ai expects the
+// SAME path that was used to submit (no stripping). Older pixverse model used
+// a shortened base, but the modern seedance/kling/veo endpoints require the
+// full path.
+function falBasePath(modelId) {
+  return modelId;
+}
+
+async function safeJson(res) {
+  const text = await res.text();
+  if (!text) return {};
+  try { return JSON.parse(text); } catch { return { _raw: text.slice(0, 300) }; }
+}
+
+// Try multiple candidate base paths until one returns a non-405/404. fal.ai
+// queue path conventions vary per model, so we try the full submit path first,
+// then progressively shorter prefixes.
+function statusCandidates(modelId) {
+  const c = new Set();
+  c.add(modelId);
+  // Strip trailing /text-to-video or /image-to-video
+  c.add(modelId.replace(/\/(text-to-video|image-to-video)$/, ''));
+  // Strip /v{ver}/... onwards
+  c.add(modelId.replace(/\/v[\d.]+\/.*$/, ''));
+  // Strip everything after the second segment (e.g. fal-ai/seedance)
+  const parts = modelId.split('/');
+  if (parts.length >= 2) c.add(parts.slice(0, 2).join('/'));
+  return [...c];
 }
 
 async function falStatus(env, modelId, requestId) {
-  // fal.ai status uses the base model path (e.g., fal-ai/pixverse) not the full endpoint.
-  // Strip the trailing /v{version}/... segment. Handles dotted versions like v1.6, v2.5.
-  const basePath = modelId.replace(/\/v[\d.]+\/.*$/, '').replace(/\/(text-to-video|image-to-video|fast)(\/.*)?$/, '');
-  const res = await fetch(`https://queue.fal.run/${basePath}/requests/${requestId}/status`, {
-    headers: { 'Authorization': `Key ${env.FAL_KEY}` },
-  });
-  return res.json();
+  for (const basePath of statusCandidates(modelId)) {
+    const url = `https://queue.fal.run/${basePath}/requests/${requestId}/status`;
+    const res = await fetch(url, { headers: { 'Authorization': `Key ${env.FAL_KEY}` } });
+    if (res.ok) {
+      return await safeJson(res);
+    }
+    if (res.status !== 404 && res.status !== 405) {
+      // Real error — return the parsed body
+      const data = await safeJson(res);
+      console.error('[falStatus] non-ok', { url, httpStatus: res.status, body: JSON.stringify(data).slice(0, 300) });
+      return data;
+    }
+    // Otherwise (404/405), try the next candidate.
+  }
+  console.error('[falStatus] all candidates failed', { modelId, requestId, candidates: statusCandidates(modelId) });
+  return {};
 }
 
 async function falResult(env, modelId, requestId) {
-  const basePath = modelId.replace(/\/v\d+\/.*$/, '');
-  const res = await fetch(`https://queue.fal.run/${basePath}/requests/${requestId}`, {
-    headers: { 'Authorization': `Key ${env.FAL_KEY}` },
-  });
-  return res.json();
+  for (const basePath of statusCandidates(modelId)) {
+    const url = `https://queue.fal.run/${basePath}/requests/${requestId}`;
+    const res = await fetch(url, { headers: { 'Authorization': `Key ${env.FAL_KEY}` } });
+    if (res.ok) return await safeJson(res);
+    if (res.status !== 404 && res.status !== 405) {
+      const data = await safeJson(res);
+      console.error('[falResult] non-ok', { url, httpStatus: res.status, body: JSON.stringify(data).slice(0, 300) });
+      return data;
+    }
+  }
+  console.error('[falResult] all candidates failed', { modelId, requestId });
+  return {};
 }
 
 // ── Rate limiting ────────────────────────────────────────────────────
@@ -429,7 +478,7 @@ async function handleCreditsDeduct(request, env) {
 }
 
 async function handleCreateGenerate(request, env) {
-  const { modelId, prompt, imageUrl, duration = 5, userId } = await request.json();
+  const { modelId, prompt, imageUrl, duration = 5, userId, userEmail } = await request.json();
   if (!prompt) return json({ error: 'prompt is required' }, 400);
 
   // Rate limit
@@ -438,18 +487,47 @@ async function handleCreateGenerate(request, env) {
     if (!rateCheck.allowed) return json(rateCheck, 429);
   }
 
-  // Credit check + deduct
+  // Credit check + deduct.
+  // The same human may have multiple app_users rows (web supabase uid + mobile
+  // firebase uid). Sum credits across ALL email rows (matching the Next side
+  // behavior in src/lib/express/credits.ts), and deduct from the row with the
+  // most credits.
   if (userId) {
-    const user = await getUser(env, userId);
-    if (user && !user.is_subscribed) {
+    let rows = [];
+    if (userEmail) {
+      rows = (await supabase(env, 'GET', 'app_users', {
+        filter: `email=eq.${encodeURIComponent(userEmail)}`,
+        select: '*',
+      })) || [];
+    }
+    if (rows.length === 0) {
+      const idRow = await getUser(env, userId);
+      if (idRow) rows = [idRow];
+    }
+    const isSubscribed = rows.some(r => r.is_subscribed);
+    const totalCredits = rows.reduce((sum, r) => sum + (r.credits || 0), 0);
+    console.log('[credits] lookup', {
+      userId,
+      userEmail,
+      rowCount: rows.length,
+      totalCredits,
+      isSubscribed,
+      perRow: rows.map(r => ({ id: r.id, credits: r.credits, sub: r.is_subscribed })),
+    });
+    if (rows.length > 0 && !isSubscribed) {
       const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
-      if ((user.credits || 0) < cost) {
-        return json({ error: 'Insufficient credits', credits: user.credits || 0, cost }, 402);
+      console.log('[credits] check', { cost, totalCredits, modelId, duration });
+      if (totalCredits < cost) {
+        return json({ error: 'Insufficient credits', credits: totalCredits, cost }, 402);
       }
+      // Deduct from the row with the most credits.
+      const target = rows.slice().sort((a, b) => (b.credits || 0) - (a.credits || 0))[0];
       await supabase(env, 'PATCH', 'app_users', {
-        filter: `id=eq.${userId}`,
-        body: { credits: (user.credits || 0) - cost },
+        filter: `id=eq.${target.id}`,
+        body: { credits: (target.credits || 0) - cost },
       });
+    } else if (rows.length === 0) {
+      console.warn('[credits] no app_users row found for', { userId, userEmail });
     }
   }
 
@@ -514,7 +592,20 @@ async function handleCreateStatus(id, env) {
 
     if (status.status === 'COMPLETED') {
       const result = await falResult(env, gen.fal_model_id, gen.fal_request_id);
-      const outputUrl = result?.video?.url || result?.output?.url || null;
+      // Different fal models return result in different shapes — try them all.
+      const outputUrl =
+        result?.video?.url ||
+        result?.output?.url ||
+        result?.videos?.[0]?.url ||
+        result?.video_url ||
+        result?.output_url ||
+        result?.url ||
+        (Array.isArray(result?.output) ? result.output[0] : null) ||
+        null;
+
+      if (!outputUrl) {
+        console.error('[handleCreateStatus] COMPLETED but no outputUrl. Result:', JSON.stringify(result).slice(0, 500));
+      }
 
       await supabase(env, 'PATCH', 'ai_generations', {
         filter: `id=eq.${id}`,
