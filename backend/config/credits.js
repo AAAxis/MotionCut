@@ -8,20 +8,21 @@
  */
 
 // Credits per second of video for each model
+// Tuned so 100 promo credits ≈ 1 generation (5s clip)
 const MODEL_CREDITS_PER_SECOND = {
   // Budget
-  'bytedance/seedance-1-lite': 1,       // $0.04/5s → 5 credits = $0.50
-  'wan-video/wan-2.5-t2v-fast': 1,      // $0.05/5s → 5 credits = $0.50
+  'bytedance/seedance-1-lite': 12,      // 5s = 60 credits
+  'wan-video/wan-2.5-t2v-fast': 12,     // 5s = 60 credits
   // Standard
-  'bytedance/seedance-1-pro': 2,        // $0.08/5s → 10 credits = $1.00
-  'kwaivgi/kling-v1.6-standard': 2,     // $0.15/5s → 10 credits = $1.00
-  'kwaivgi/kling-v2.1': 3,              // $0.30/5s → 15 credits = $1.50
-  'kwaivgi/kling-v3.0': 4,              // $0.84/5s → 20 credits = $2.00
+  'bytedance/seedance-1-pro': 16,       // 5s = 80 credits
+  'kwaivgi/kling-v1.6-standard': 16,    // 5s = 80 credits
+  'kwaivgi/kling-v2.1': 18,             // 5s = 90 credits
+  'kwaivgi/kling-v3.0': 20,             // 5s = 100 credits
   // Premium
-  'minimax/video-01': 5,                // $0.50/5s → 25 credits = $2.50
-  'google/veo-3.1-fast': 5,             // $0.50/5s → 25 credits = $2.50
-  'google/veo-3.1': 8,                  // $1.00/5s → 40 credits = $4.00
-  'runway/gen-4.5': 8,                  // $1.25/5s → 40 credits = $4.00
+  'minimax/video-01': 20,               // 5s = 100 credits
+  'google/veo-3.1-fast': 20,            // 5s = 100 credits
+  'google/veo-3.1': 24,                 // 5s = 120 credits
+  'runway/gen-4.5': 24,                 // 5s = 120 credits
 };
 
 // Fixed credit costs for non-video operations
