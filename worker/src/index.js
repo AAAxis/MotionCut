@@ -17,20 +17,22 @@
 
 // ── Config ───────────────────────────────────────────────────────────
 // Tuned so 100 promo credits ≈ 1 generation (5s clip)
+// Must match the MODELS array in src/components/create/unified-input.tsx.
+// Cost is floored to 60 credits per video minimum (see calculateCost).
 const MODEL_CREDITS_PER_SECOND = {
-  'bytedance/seedance-1-lite': 12,    // 5s = 60
-  'wan-video/wan-2.5-t2v-fast': 12,   // 5s = 60
-  'bytedance/seedance-1-pro': 16,     // 5s = 80
-  'kwaivgi/kling-v1.6-standard': 16,  // 5s = 80
-  'kwaivgi/kling-v2.1': 18,           // 5s = 90
+  'bytedance/seedance-1-lite': 12,    // 5s = 60 (floored)
+  'wan-video/wan-2.5-t2v-fast': 12,   // 5s = 60 (floored)
+  'bytedance/seedance-1-pro': 14,     // 5s = 70
+  'kwaivgi/kling-v1.6-standard': 14,  // 5s = 70
+  'kwaivgi/kling-v2.1': 16,           // 5s = 80
   'kwaivgi/kling-v3.0': 20,           // 5s = 100
-  'minimax/video-01': 20,             // 5s = 100
-  'google/veo-3.1-fast': 20,          // 5s = 100
-  'google/veo-3.1': 24,               // 5s = 120
-  'runway/gen-4.5': 24,               // 5s = 120
+  'minimax/video-01': 24,             // 5s = 120
+  'google/veo-3.1-fast': 24,          // 5s = 120
+  'google/veo-3.1': 32,               // 5s = 160
+  'runway/gen-4.5': 32,               // 5s = 160
 };
 
-const FREE_CREDITS = 10;
+const FREE_CREDITS = 100;
 const RATE_LIMITS = {
   free: { dailyGenerations: 3, cooldownSeconds: 60 },
   paid: { dailyGenerations: 50, cooldownSeconds: 10 },
@@ -46,8 +48,8 @@ const IAP_PRODUCTS = {
 };
 
 function calculateCost(modelId, duration) {
-  const perSecond = MODEL_CREDITS_PER_SECOND[modelId] || 2;
-  return Math.ceil(perSecond * duration);
+  const perSecond = MODEL_CREDITS_PER_SECOND[modelId] || 12;
+  return Math.max(60, Math.ceil(perSecond * duration));
 }
 
 // ── Supabase helpers ─────────────────────────────────────────────────
