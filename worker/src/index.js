@@ -34,8 +34,8 @@ const MODEL_CREDITS_PER_SECOND = {
 
 const FREE_CREDITS = 10;
 const RATE_LIMITS = {
-  free: { dailyGenerations: 3, cooldownSeconds: 60 },
-  paid: { dailyGenerations: 50, cooldownSeconds: 10 },
+  free: { dailyGenerations: 10, cooldownSeconds: 30 },
+  paid: { dailyGenerations: 100, cooldownSeconds: 5 },
 };
 
 const IAP_PRODUCTS = {
@@ -52,6 +52,37 @@ const IAP_PRODUCTS = {
 function calculateCost(modelId, duration) {
   const perSecond = MODEL_CREDITS_PER_SECOND[modelId] || 2;
   return Math.max(10, Math.ceil(perSecond * duration));
+}
+
+// ── Supabase Storage: copy remote file to permanent storage ─────────
+const STORAGE_BUCKET = 'generation-inputs';
+
+async function copyToStorage(env, sourceUrl, storagePath, contentType) {
+  // Download from fal.media (or wherever).
+  const dlRes = await fetch(sourceUrl);
+  if (!dlRes.ok) throw new Error(`Download failed: ${dlRes.status}`);
+  const blob = await dlRes.arrayBuffer();
+
+  // Upload to Supabase Storage via the S3-compatible REST API.
+  const key = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY;
+  const uploadUrl = `${env.SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`;
+  const upRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': contentType,
+      'x-upsert': 'true',
+    },
+    body: blob,
+  });
+  if (!upRes.ok) {
+    const err = await upRes.text();
+    throw new Error(`Upload failed: ${upRes.status} ${err.slice(0, 200)}`);
+  }
+
+  // Return the public URL.
+  return `${env.SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
 }
 
 // ── Supabase helpers ─────────────────────────────────────────────────
@@ -662,7 +693,7 @@ async function handleCreateStatus(id, env) {
     if (status.status === 'COMPLETED') {
       const result = await falResult(env, gen.fal_model_id, gen.fal_request_id);
       // Different fal models return result in different shapes — try them all.
-      const outputUrl =
+      let outputUrl =
         result?.video?.url ||
         result?.output?.url ||
         result?.videos?.[0]?.url ||
@@ -672,16 +703,54 @@ async function handleCreateStatus(id, env) {
         (Array.isArray(result?.output) ? result.output[0] : null) ||
         null;
 
+      // Extract thumbnail from fal result — models return it under different keys.
+      let thumbnailUrl =
+        result?.thumbnail?.url ||
+        result?.thumbnail_url ||
+        result?.thumbnails?.[0]?.url ||
+        result?.video?.thumbnail_url ||
+        result?.poster_url ||
+        null;
+
       if (!outputUrl) {
         console.error('[handleCreateStatus] COMPLETED but no outputUrl. Result:', JSON.stringify(result).slice(0, 500));
       }
 
+      // ── Persist to Supabase Storage so URLs never expire ────────────
+      if (outputUrl) {
+        try {
+          const permanent = await copyToStorage(env, outputUrl, `videos/${id}.mp4`, 'video/mp4');
+          if (permanent) {
+            console.log('[persist] video saved:', permanent);
+            outputUrl = permanent;
+          }
+        } catch (e) {
+          console.error('[persist] video copy failed:', e.message);
+          // Keep the fal URL as fallback.
+        }
+      }
+      if (thumbnailUrl) {
+        try {
+          const permanent = await copyToStorage(env, thumbnailUrl, `thumbnails/${id}.jpg`, 'image/jpeg');
+          if (permanent) {
+            console.log('[persist] thumbnail saved:', permanent);
+            thumbnailUrl = permanent;
+          }
+        } catch (e) {
+          console.error('[persist] thumbnail copy failed:', e.message);
+        }
+      }
+      // If no thumbnail from fal, generate one from the video via ffmpeg?
+      // Not possible in CF Worker — the frontend fallback (<video preload=metadata>)
+      // handles it, and the video URL is now permanent so it won't die.
+
       await supabase(env, 'PATCH', 'ai_generations', {
         filter: `id=eq.${id}`,
-        body: { status: 'succeeded', output_url: outputUrl, completed_at: new Date().toISOString() },
+        body: { status: 'succeeded', output_url: outputUrl, thumbnail_url: thumbnailUrl, completed_at: new Date().toISOString() },
       });
       gen.status = 'succeeded';
       gen.output_url = outputUrl;
+      gen.thumbnail_url = thumbnailUrl;
     } else if (status.status === 'FAILED') {
       await supabase(env, 'PATCH', 'ai_generations', {
         filter: `id=eq.${id}`,
@@ -700,6 +769,7 @@ async function handleCreateStatus(id, env) {
     model: gen.model_id,
     prompt: gen.prompt,
     outputUrl: gen.output_url,
+    thumbnailUrl: gen.thumbnail_url || null,
     error: gen.error,
     duration: gen.duration,
     createdAt: gen.created_at,
