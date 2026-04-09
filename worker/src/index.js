@@ -488,47 +488,48 @@ async function handleCreateGenerate(request, env) {
   }
 
   // Credit check + deduct.
-  // The same human may have multiple app_users rows (web supabase uid + mobile
-  // firebase uid). Sum credits across ALL email rows (matching the Next side
-  // behavior in src/lib/express/credits.ts), and deduct from the row with the
-  // most credits.
-  if (userId) {
-    let rows = [];
-    if (userEmail) {
-      rows = (await supabase(env, 'GET', 'app_users', {
-        filter: `email=eq.${encodeURIComponent(userEmail)}`,
-        select: '*',
-      })) || [];
-    }
-    if (rows.length === 0) {
-      const idRow = await getUser(env, userId);
-      if (idRow) rows = [idRow];
-    }
-    const isSubscribed = rows.some(r => r.is_subscribed);
-    const totalCredits = rows.reduce((sum, r) => sum + (r.credits || 0), 0);
-    console.log('[credits] lookup', {
-      userId,
-      userEmail,
-      rowCount: rows.length,
-      totalCredits,
-      isSubscribed,
-      perRow: rows.map(r => ({ id: r.id, credits: r.credits, sub: r.is_subscribed })),
-    });
-    if (rows.length > 0 && !isSubscribed) {
-      const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
-      console.log('[credits] check', { cost, totalCredits, modelId, duration });
-      if (totalCredits < cost) {
-        return json({ error: 'Insufficient credits', credits: totalCredits, cost }, 402);
-      }
-      // Deduct from the row with the most credits.
-      const target = rows.slice().sort((a, b) => (b.credits || 0) - (a.credits || 0))[0];
-      await supabase(env, 'PATCH', 'app_users', {
-        filter: `id=eq.${target.id}`,
-        body: { credits: (target.credits || 0) - cost },
+  // SOURCE OF TRUTH: a single app_users row keyed by email (lowercased).
+  // If no row exists yet for this email, create one with FREE_CREDITS.
+  if (userEmail) {
+    const emailKey = String(userEmail).trim().toLowerCase();
+    let rows = (await supabase(env, 'GET', 'app_users', {
+      filter: `email=eq.${emailKey}`,
+      select: '*',
+    })) || [];
+
+    let user = rows[0];
+    if (!user) {
+      // Create the row.
+      const created = await supabase(env, 'POST', 'app_users', {
+        body: { id: userId, email: emailKey, credits: FREE_CREDITS, platform: 'web' },
+        upsert: true,
       });
-    } else if (rows.length === 0) {
-      console.warn('[credits] no app_users row found for', { userId, userEmail });
+      user = Array.isArray(created) ? created[0] : created;
+      console.log('[credits] created new app_users row', { email: emailKey, credits: FREE_CREDITS });
     }
+
+    console.log('[credits] lookup', {
+      email: emailKey,
+      rowId: user?.id,
+      credits: user?.credits,
+      isSubscribed: user?.is_subscribed,
+      duplicateRows: rows.length,
+    });
+
+    if (user && !user.is_subscribed) {
+      const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+      const available = user.credits || 0;
+      console.log('[credits] check', { cost, available, modelId, duration });
+      if (available < cost) {
+        return json({ error: 'Insufficient credits', credits: available, cost }, 402);
+      }
+      await supabase(env, 'PATCH', 'app_users', {
+        filter: `email=eq.${emailKey}`,
+        body: { credits: available - cost },
+      });
+    }
+  } else {
+    console.warn('[credits] no userEmail in request — skipping credit check');
   }
 
   // Pick model + build input
