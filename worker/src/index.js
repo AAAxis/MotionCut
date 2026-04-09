@@ -18,10 +18,10 @@
 // ── Config ───────────────────────────────────────────────────────────
 // Tuned so 100 promo credits ≈ 1 generation (5s clip)
 // Must match the MODELS array in src/components/create/unified-input.tsx.
-// Cost is floored to 60 credits per video minimum (see calculateCost).
+// Cost is floored to 10 credits per video minimum (see calculateCost).
 const MODEL_CREDITS_PER_SECOND = {
-  'bytedance/seedance-1-lite': 12,    // 5s = 60 (floored)
-  'wan-video/wan-2.5-t2v-fast': 12,   // 5s = 60 (floored)
+  'bytedance/seedance-1-lite': 2,     // 5s = 10  (welcome-pack tier)
+  'wan-video/wan-2.5-t2v-fast': 2,    // 5s = 10
   'bytedance/seedance-1-pro': 14,     // 5s = 70
   'kwaivgi/kling-v1.6-standard': 14,  // 5s = 70
   'kwaivgi/kling-v2.1': 16,           // 5s = 80
@@ -32,24 +32,26 @@ const MODEL_CREDITS_PER_SECOND = {
   'runway/gen-4.5': 32,               // 5s = 160
 };
 
-const FREE_CREDITS = 100;
+const FREE_CREDITS = 10;
 const RATE_LIMITS = {
   free: { dailyGenerations: 3, cooldownSeconds: 60 },
   paid: { dailyGenerations: 50, cooldownSeconds: 10 },
 };
 
 const IAP_PRODUCTS = {
+  'credits_10': 10,    // welcome pack — covers 1 Seedance Lite 5s video
   'credits_100': 100,
   'credits_200': 200,
   'credits_300': 300,
+  'com.creator.10': 10,
   'com.creator.100': 100,
   'com.creator.200': 200,
   'com.creator.300': 300,
 };
 
 function calculateCost(modelId, duration) {
-  const perSecond = MODEL_CREDITS_PER_SECOND[modelId] || 12;
-  return Math.max(60, Math.ceil(perSecond * duration));
+  const perSecond = MODEL_CREDITS_PER_SECOND[modelId] || 2;
+  return Math.max(10, Math.ceil(perSecond * duration));
 }
 
 // ── Supabase helpers ─────────────────────────────────────────────────
@@ -479,6 +481,70 @@ async function handleCreditsDeduct(request, env) {
   return json({ credits: newCredits, deducted: cost });
 }
 
+async function handlePromoRedeem(request, env) {
+  const { code, userEmail } = await request.json();
+  if (!code || !userEmail) {
+    return json({ error: 'code and userEmail are required' }, 400);
+  }
+  const codeKey = String(code).trim().toUpperCase();
+  const emailKey = String(userEmail).trim().toLowerCase();
+
+  // Look up the promo code.
+  const codeRows = await supabase(env, 'GET', 'promo_codes', {
+    filter: `code=eq.${codeKey}`,
+    select: '*',
+  });
+  const promo = codeRows?.[0];
+  if (!promo) return json({ error: 'Invalid code' }, 404);
+  if (!promo.active) return json({ error: 'Code is no longer active' }, 410);
+  if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+    return json({ error: 'Code has expired' }, 410);
+  }
+  if (promo.max_uses != null && promo.used_count >= promo.max_uses) {
+    return json({ error: 'Code is fully redeemed' }, 410);
+  }
+
+  // Already redeemed by this email?
+  const existing = await supabase(env, 'GET', 'promo_redemptions', {
+    filter: `code=eq.${codeKey}&user_email=eq.${emailKey}`,
+    select: 'id',
+  });
+  if (existing?.length > 0) {
+    return json({ error: 'You already redeemed this code' }, 409);
+  }
+
+  // Find or create the app_users row by email.
+  const userRows = await supabase(env, 'GET', 'app_users', {
+    filter: `email=eq.${emailKey}`,
+    select: '*',
+  });
+  let user = userRows?.[0];
+  if (!user) {
+    const created = await supabase(env, 'POST', 'app_users', {
+      body: { email: emailKey, credits: FREE_CREDITS, platform: 'web' },
+      upsert: true,
+    });
+    user = Array.isArray(created) ? created[0] : created;
+  }
+
+  const newCredits = (user?.credits || 0) + promo.credits;
+
+  // Apply: increment user credits, record redemption, bump used_count.
+  await supabase(env, 'PATCH', 'app_users', {
+    filter: `email=eq.${emailKey}`,
+    body: { credits: newCredits },
+  });
+  await supabase(env, 'POST', 'promo_redemptions', {
+    body: { code: codeKey, user_email: emailKey, credits_granted: promo.credits },
+  });
+  await supabase(env, 'PATCH', 'promo_codes', {
+    filter: `code=eq.${codeKey}`,
+    body: { used_count: (promo.used_count || 0) + 1 },
+  });
+
+  return json({ ok: true, creditsGranted: promo.credits, totalCredits: newCredits });
+}
+
 async function handleCreateGenerate(request, env) {
   const { modelId, prompt, imageUrl, duration = 5, userId, userEmail } = await request.json();
   if (!prompt) return json({ error: 'prompt is required' }, 400);
@@ -677,6 +743,7 @@ export default {
       if (path === '/api/credits/add' && request.method === 'POST') return handleCreditsAdd(request, env);
       if (path === '/api/credits/check' && request.method === 'POST') return handleCreditsCheck(request, env);
       if (path === '/api/credits/deduct' && request.method === 'POST') return handleCreditsDeduct(request, env);
+      if (path === '/api/promo/redeem' && request.method === 'POST') return handlePromoRedeem(request, env);
 
       // AI Generation (fal.ai proxy)
       if (path === '/api/create/generate' && request.method === 'POST') return handleCreateGenerate(request, env);
