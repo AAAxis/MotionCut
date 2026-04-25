@@ -135,6 +135,15 @@ struct MacBuyCreditsPlaceholder: View {
                 .onTapGesture {
                     Task { await purchaseService.restorePurchases() }
                 }
+
+            // Terms of Use (EULA) + Privacy Policy — required by App Review
+            // for any screen offering in-app purchases or subscriptions.
+            HStack(spacing: 20) {
+                Link("Terms of Use", destination: URL(string: "https://holylabs.net/terms")!)
+                Link("Privacy Policy", destination: URL(string: "https://holylabs.net/privacy")!)
+            }
+            .font(.system(size: 11))
+            .foregroundColor(theme.textTertiary)
         }
         .padding(24)
         .background(theme.background)
