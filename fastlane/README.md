@@ -13,6 +13,17 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 # Available Actions
 
+### upload_all_metadata
+
+```sh
+[bundle exec] fastlane upload_all_metadata
+```
+
+Upload iOS and macOS release notes + promotional text
+
+----
+
+
 ## iOS
 
 ### ios upload_metadata
@@ -21,7 +32,20 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 [bundle exec] fastlane ios upload_metadata
 ```
 
-Upload release notes + promotional text to existing localizations only
+Upload iOS release notes + promotional text to existing localizations
+
+----
+
+
+## Mac
+
+### mac upload_metadata
+
+```sh
+[bundle exec] fastlane mac upload_metadata
+```
+
+Upload macOS release notes + promotional text to existing localizations
 
 ----
 

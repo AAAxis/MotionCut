@@ -108,12 +108,6 @@ struct CreatorAIApp: App {
                 }
                 .keyboardShortcut("b", modifiers: .command)
             }
-            CommandMenu("Window") {
-                Button("Catalog") {
-                    // Open catalog as separate window
-                }
-                .keyboardShortcut("k", modifiers: .command)
-            }
         }
         #endif
     }

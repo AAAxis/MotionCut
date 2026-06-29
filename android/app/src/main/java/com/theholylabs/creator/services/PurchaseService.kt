@@ -45,6 +45,14 @@ object PurchaseService {
 
     private var isConfigured = false
 
+    enum class CreatorSubscriptionPlan {
+        NONE,
+        MONTHLY,
+        YEARLY;
+
+        val isActive: Boolean get() = this != NONE
+    }
+
     fun configureOnAppStart(context: Context) {
         val storage = SecureStorage(context)
         val userId = storage.get("userId")
@@ -66,7 +74,7 @@ object PurchaseService {
                     .build()
             )
             Purchases.sharedInstance.updatedCustomerInfoListener =
-                UpdatedCustomerInfoListener { _ -> }
+                UpdatedCustomerInfoListener { info -> cacheSubscriptionPlan(context, info) }
             isConfigured = true
             Log.d("PurchaseService", "Configured for user: $userId")
         } else {
@@ -79,6 +87,32 @@ object PurchaseService {
                 }
             })
         }
+    }
+
+    fun currentPlan(context: Context): CreatorSubscriptionPlan {
+        val raw = context.getSharedPreferences("app_prefs", 0)
+            .getString("creator_subscription_plan", CreatorSubscriptionPlan.NONE.name)
+        return runCatching { CreatorSubscriptionPlan.valueOf(raw ?: CreatorSubscriptionPlan.NONE.name) }
+            .getOrDefault(CreatorSubscriptionPlan.NONE)
+    }
+
+    fun cacheSubscriptionPlan(context: Context, customerInfo: CustomerInfo) {
+        val plan = detectPlan(customerInfo)
+        context.getSharedPreferences("app_prefs", 0)
+            .edit()
+            .putString("creator_subscription_plan", plan.name)
+            .apply()
+    }
+
+    private fun detectPlan(customerInfo: CustomerInfo): CreatorSubscriptionPlan {
+        val ids = buildList {
+            addAll(customerInfo.entitlements.active.keys.map { it.lowercase() })
+            addAll(customerInfo.entitlements.active.values.map { it.productIdentifier.lowercase() })
+            addAll(customerInfo.activeSubscriptions.map { it.lowercase() })
+        }
+        if (ids.any { it.contains("year") || it.contains("annual") }) return CreatorSubscriptionPlan.YEARLY
+        if (ids.any { it.contains("month") || it.contains("subscription") || it.contains("pro") }) return CreatorSubscriptionPlan.MONTHLY
+        return CreatorSubscriptionPlan.NONE
     }
 
     suspend fun loadOfferings(): List<Package> = suspendCancellableCoroutine { cont ->
@@ -102,6 +136,7 @@ object PurchaseService {
         val params = PurchaseParams.Builder(activity, pkg).build()
         Purchases.sharedInstance.purchase(params, object : PurchaseCallback {
             override fun onCompleted(storeTransaction: StoreTransaction, customerInfo: CustomerInfo) {
+                cacheSubscriptionPlan(activity, customerInfo)
                 val productId = storeTransaction.productIds.firstOrNull() ?: ""
                 val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
                 scope.launch {

@@ -204,7 +204,7 @@ private fun LoginStepView(
         Spacer(modifier = Modifier.height(12.dp))
 
         Text(
-            text = "Sign in to sync your library across devices. You can skip and sign in later from Profile.",
+            text = "Sign in to sync your library across devices. You can skip and sign in later from the profile icon.",
             fontSize = 15.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

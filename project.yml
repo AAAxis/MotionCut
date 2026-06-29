@@ -9,14 +9,11 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    MARKETING_VERSION: "3.1"
-    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: "3.3"
+    CURRENT_PROJECT_VERSION: 10
     DEVELOPMENT_TEAM: LJPXXSNQZ9
 
 packages:
-  Supabase:
-    url: https://github.com/supabase/supabase-swift.git
-    from: "2.0.0"
   RevenueCat:
     url: https://github.com/RevenueCat/purchases-ios-spm.git
     from: "5.0.0"
@@ -52,7 +49,6 @@ targets:
         INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: "CreatorAI needs permission to save videos to your gallery."
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "CreatorAI needs microphone access for recording."
     dependencies:
-      - package: Supabase
       - package: RevenueCat
         product: RevenueCat
       - package: RevenueCat
@@ -63,6 +59,10 @@ targets:
         product: FirebaseCore
       - package: Firebase
         product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: Firebase
+        product: FirebaseStorage
       - package: Firebase
         product: FirebaseMessaging
       - package: GoogleSignIn
@@ -85,6 +85,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.theholylabs.creator
         PRODUCT_NAME: CreatorAI
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_DEBUG_DYLIB: NO
         INFOPLIST_KEY_NSMicrophoneUsageDescription: "CreatorAI needs microphone access for voiceover recording."
         INFOPLIST_KEY_NSCameraUsageDescription: "CreatorAI needs camera access to record videos."
     entitlements:
@@ -98,7 +99,6 @@ targets:
         com.apple.developer.applesignin:
           - Default
     dependencies:
-      - package: Supabase
       - package: RevenueCat
         product: RevenueCat
       - package: RevenueCat
@@ -107,3 +107,7 @@ targets:
         product: FirebaseCore
       - package: Firebase
         product: FirebaseAuth
+      - package: Firebase
+        product: FirebaseFirestore
+      - package: Firebase
+        product: FirebaseStorage

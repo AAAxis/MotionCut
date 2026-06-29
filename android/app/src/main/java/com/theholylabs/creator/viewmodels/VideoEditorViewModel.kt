@@ -11,7 +11,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.C
 import com.theholylabs.creator.models.Clip
 import com.theholylabs.creator.models.MusicTrack
+import com.theholylabs.creator.models.PRESET_AI_MODELS
 import com.theholylabs.creator.services.FileStorageService
+import com.theholylabs.creator.services.LocalReelGenerator
 import com.theholylabs.creator.ui.editor.EditorTab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -130,9 +132,93 @@ class VideoEditorViewModel(
     fun hideAiPrompt() { _showAiPrompt.value = false; _aiPrompt.value = "" }
     fun setAiPrompt(text: String) { _aiPrompt.value = text }
 
-    fun generateAiClip() {
+    fun generateAiAd(
+        aiModelId: String = PRESET_AI_MODELS.firstOrNull()?.id ?: "fal-ai/kling-video/v2.6/pro/text-to-video",
+        sourceMode: String = "smart",
+        scenarioMode: String,
+        voiceoverMode: String,
+        language: String = "en",
+        clipCount: Int = 4
+    ) {
         val prompt = _aiPrompt.value.trim()
         if (prompt.isEmpty()) return
+
+        if (scenarioMode != "standard") {
+            _aiStatus.value = "Claude/Codex scenario needs a server endpoint before it can run."
+            return
+        }
+
+        if (voiceoverMode == "elevenlabs") {
+            _aiStatus.value = "Start trial to use premium voice."
+            return
+        }
+
+        _aiGenerating.value = true
+        _aiStatus.value = "Starting ad maker..."
+        _showAiPrompt.value = false
+
+        viewModelScope.launch {
+            try {
+                val context = getApplication<Application>()
+                val result = LocalReelGenerator.generate(
+                    context = context,
+                    topic = prompt,
+                    language = language,
+                    clipCount = clipCount,
+                    aiModelId = aiModelId,
+                    sourceMode = sourceMode,
+                    voiceoverMode = voiceoverMode,
+                    userId = userId,
+                    onProgress = { progress ->
+                        _aiStatus.value = progress.step
+                    }
+                )
+
+                if (!result.success || result.takesJson.isNullOrBlank()) {
+                    _aiStatus.value = result.error ?: "Ad maker failed"
+                    _aiGenerating.value = false
+                    return@launch
+                }
+
+                val generatedClips = Json.decodeFromString(
+                    kotlinx.serialization.builtins.ListSerializer(Clip.serializer()),
+                    result.takesJson
+                )
+
+                if (generatedClips.isNotEmpty()) {
+                    _clips.value = generatedClips
+                    _activeClipIndex.value = 0
+                    rebuildPlayerPlaylist(0)
+                }
+
+                result.voiceoverPath?.let { path ->
+                    val file = File(path)
+                    if (file.exists()) {
+                        _selectedMusic.value = MusicTrack(
+                            id = "ai_voiceover",
+                            name = "AI Voiceover",
+                            file = file.absolutePath
+                        )
+                        loadMusicFile(file)
+                    }
+                }
+
+                _aiStatus.value = ""
+                _aiPrompt.value = ""
+            } catch (e: Exception) {
+                _aiStatus.value = "Error: ${e.message}"
+            }
+            _aiGenerating.value = false
+        }
+    }
+
+    fun generateAiClip(
+        modelId: String = PRESET_AI_MODELS.firstOrNull()?.id ?: "fal-ai/kling-video/v2.6/pro/text-to-video",
+        durationSeconds: Int = 5
+    ) {
+        val prompt = _aiPrompt.value.trim()
+        if (prompt.isEmpty()) return
+        val duration = durationSeconds.coerceIn(3, 10)
         _aiGenerating.value = true
         _aiStatus.value = "Starting AI generation..."
         _showAiPrompt.value = false
@@ -141,11 +227,12 @@ class VideoEditorViewModel(
             try {
                 // Start generation on server
                 val response = com.theholylabs.creator.services.GenerationService.startAICreate(
-                    modelId = "fal-ai/pixverse/v4/text-to-video",
+                    modelId = modelId,
                     prompt = prompt,
                     imageUrl = null,
-                    duration = 5,
+                    duration = duration,
                     userId = userId,
+                    context = getApplication()
                 )
                 if (response?.id == null || response.error != null) {
                     _aiStatus.value = response?.error ?: "Failed to start"
@@ -179,7 +266,7 @@ class VideoEditorViewModel(
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     com.theholylabs.creator.services.FileStorageService.downloadFile(outputUrl, cacheFile)
                 }
-                addClipFromUri(cacheFile.absolutePath, 5.0)
+                addClipFromUri(cacheFile.absolutePath, duration.toDouble())
                 _aiStatus.value = ""
                 _aiPrompt.value = ""
             } catch (e: Exception) {
@@ -226,11 +313,9 @@ class VideoEditorViewModel(
     private val positionUpdateRunnable = object : Runnable {
         override fun run() {
             videoPlayer?.let { player ->
-                _currentTimeMs.value = player.currentPosition
-                val dur = player.duration
-                if (dur != C.TIME_UNSET && dur > 0) {
-                    _durationMs.value = dur
-                }
+                val safeIndex = player.currentMediaItemIndex.coerceIn(0, max(0, _clips.value.lastIndex))
+                _currentTimeMs.value = timelineOffsetMs(safeIndex) + player.currentPosition
+                _durationMs.value = timelineDurationMs()
             }
             handler.postDelayed(this, 100L)
         }
@@ -238,6 +323,36 @@ class VideoEditorViewModel(
 
     private val isReelMode: Boolean
         get() = _clips.value.any { it.beatDuration != null } && _clips.value.size > 1
+
+    private fun clipDurationMs(clip: Clip): Long {
+        val seconds = clip.beatDuration ?: clip.sourceDuration ?: 3.0
+        return (seconds * 1000.0).toLong().coerceAtLeast(1L)
+    }
+
+    private fun timelineOffsetMs(index: Int): Long {
+        if (index <= 0) return 0L
+        return _clips.value.take(index.coerceAtMost(_clips.value.size)).sumOf { clipDurationMs(it) }
+    }
+
+    private fun timelineDurationMs(): Long =
+        _clips.value.sumOf { clipDurationMs(it) }.coerceAtLeast(1L)
+
+    private fun rebuildPlayerPlaylist(
+        startIndex: Int = _activeClipIndex.value.coerceAtLeast(0),
+        playWhenReady: Boolean = _isPlaying.value
+    ) {
+        val player = videoPlayer ?: return
+        val clips = _clips.value
+        if (clips.isEmpty()) return
+        val safeIndex = startIndex.coerceIn(0, clips.lastIndex)
+        player.setMediaItems(clips.map { MediaItem.fromUri(it.localUri ?: it.uri) }, safeIndex, 0L)
+        player.prepare()
+        player.volume = 0f
+        player.playWhenReady = playWhenReady
+        _activeClipIndex.value = safeIndex
+        _durationMs.value = timelineDurationMs()
+        _currentTimeMs.value = timelineOffsetMs(safeIndex)
+    }
 
     init {
         parseClips()
@@ -298,23 +413,27 @@ class VideoEditorViewModel(
             )
         }
         val player = ExoPlayer.Builder(context, videoOnlyRenderersFactory).build()
-        val firstClip = clips.first()
-        val uri = firstClip.localUri ?: firstClip.uri
-
-        player.setMediaItem(MediaItem.fromUri(uri))
-        player.prepare()
-        player.playWhenReady = true
 
         player.addListener(object : Player.Listener {
+            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                val index = player.currentMediaItemIndex
+                if (index in _clips.value.indices) {
+                    _activeClipIndex.value = index
+                }
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) {
-                    player.seekTo(0)
+                    player.seekTo(0, 0L)
+                    _activeClipIndex.value = 0
+                    _currentTimeMs.value = 0L
                     if (_isPlaying.value) player.play()
                 }
             }
         })
 
         videoPlayer = player
+        rebuildPlayerPlaylist(startIndex = 0, playWhenReady = true)
         startPositionUpdates()
     }
 
@@ -323,6 +442,12 @@ class VideoEditorViewModel(
         val context = getApplication<Application>()
         val file = File(musicUrl)
         if (!file.exists()) return
+
+        loadMusicFile(file)
+    }
+
+    private fun loadMusicFile(file: File) {
+        val context = getApplication<Application>()
 
         // Release any existing music player first
         musicPlayer?.stop()
@@ -373,11 +498,31 @@ class VideoEditorViewModel(
     }
 
     fun seekTo(percentage: Float) {
-        val dur = _durationMs.value
+        val dur = timelineDurationMs()
         if (dur <= 0) return
-        val posMs = ((percentage / 100f) * dur).toLong()
-        videoPlayer?.seekTo(posMs)
-        _currentTimeMs.value = posMs
+        val posMs = ((percentage / 100f) * dur).toLong().coerceIn(0L, dur)
+        seekTimelineTo(posMs)
+    }
+
+    private fun seekTimelineTo(positionMs: Long) {
+        val clips = _clips.value
+        if (clips.isEmpty()) return
+
+        var remaining = positionMs.coerceAtLeast(0L)
+        var targetIndex = 0
+        for ((index, clip) in clips.withIndex()) {
+            val clipMs = clipDurationMs(clip)
+            if (remaining < clipMs || index == clips.lastIndex) {
+                targetIndex = index
+                break
+            }
+            remaining -= clipMs
+        }
+
+        _activeClipIndex.value = targetIndex
+        videoPlayer?.seekTo(targetIndex, remaining.coerceAtLeast(0L))
+        musicPlayer?.seekTo(positionMs.coerceAtLeast(0L))
+        _currentTimeMs.value = positionMs
     }
 
     // Clip Management
@@ -386,17 +531,7 @@ class VideoEditorViewModel(
         val clips = _clips.value
         if (index < 0 || index >= clips.size) return
         _activeClipIndex.value = index
-
-        val clip = clips[index]
-        val uri = clip.localUri ?: clip.uri
-
-        videoPlayer?.let { player ->
-            player.setMediaItem(MediaItem.fromUri(uri))
-            player.prepare()
-            player.volume = 0f
-            if (_isPlaying.value) player.play()
-        }
-        _currentTimeMs.value = 0
+        seekTimelineTo(timelineOffsetMs(index))
     }
 
     // Debounce trim updates to avoid recomposition storm during drag
@@ -438,7 +573,11 @@ class VideoEditorViewModel(
         _activeClipIndex.value = newIndex
 
         if (clips.isNotEmpty()) {
-            selectClip(newIndex)
+            rebuildPlayerPlaylist(newIndex)
+        } else {
+            videoPlayer?.clearMediaItems()
+            _currentTimeMs.value = 0L
+            _durationMs.value = 0L
         }
     }
 
@@ -450,6 +589,7 @@ class VideoEditorViewModel(
         clips.add(index + 1, copy)
         _clips.value = clips
         _activeClipIndex.value = index + 1
+        rebuildPlayerPlaylist(index + 1)
     }
 
     fun splitClipAtPlayhead() {
@@ -507,24 +647,17 @@ class VideoEditorViewModel(
         clips.add(to, clip)
         _clips.value = clips
         _activeClipIndex.value = to
+        rebuildPlayerPlaylist(to)
     }
 
     fun playAllClips() {
-        if (!isReelMode) return
-        // Build a playlist of all clips
-        val context = getApplication<Application>()
         val player = videoPlayer ?: return
-        val clips = _clips.value
-
-        val mediaItems = clips.map { clip ->
-            val uri = clip.localUri ?: clip.uri
-            MediaItem.fromUri(uri)
+        if (player.mediaItemCount != _clips.value.size) {
+            rebuildPlayerPlaylist(_activeClipIndex.value)
         }
-
-        player.setMediaItems(mediaItems)
-        player.prepare()
-        _activeClipIndex.value = -1
-        if (_isPlaying.value) player.play()
+        _isPlaying.value = true
+        player.play()
+        musicPlayer?.play()
     }
 
     // Quality
@@ -619,7 +752,7 @@ class VideoEditorViewModel(
             beatDuration = actualDuration
         )
         _clips.value = _clips.value + newClip
-        selectClip(_clips.value.size - 1)
+        rebuildPlayerPlaylist(_clips.value.size - 1)
     }
 
     fun addClipFromPexels(videoUrl: String, duration: Double) {
@@ -657,7 +790,7 @@ class VideoEditorViewModel(
                             beatDuration = oldClip.beatDuration ?: duration
                         )
                         _clips.value = clips
-                        selectClip(replaceIndex)
+                        rebuildPlayerPlaylist(replaceIndex)
                     }
                     _isDownloadingClip.value = false
                 }
@@ -793,6 +926,7 @@ class VideoEditorViewModel(
                 addCaptionsViaCloud = _addCaptionsViaCloud.value,
                 burnSubtitles = _burnSubtitles.value,
                 subtitleYPosition = _subtitleYPosition.value,
+                includeBranding = !com.theholylabs.creator.services.PurchaseService.currentPlan(context).isActive,
                 existingGenerationId = existingGenerationId,
                 onStatusUpdate = { status ->
                     _processingStatus.value = when (status) {

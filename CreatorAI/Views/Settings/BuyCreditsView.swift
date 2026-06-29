@@ -10,28 +10,26 @@ struct BuyCreditsView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 24) {
-                // Current balance
                 VStack(spacing: 8) {
-                    Image(systemName: "star.circle.fill")
+                    Image(systemName: "crown.fill")
                         .font(.system(size: 48))
                         .foregroundColor(theme.primary)
 
-                    Text("\(appState.credits)")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
+                    Text(appState.hasUnlimitedAPIUsage ? "\(appState.subscriptionPlan.displayName) Active" : "Start trial")
+                        .font(.system(size: 30, weight: .bold, design: .rounded))
                         .foregroundColor(theme.text)
 
-                    Text("credits remaining")
+                    Text("Unlock premium voice and remove watermark")
                         .font(.system(size: 15))
                         .foregroundColor(theme.textSecondary)
                 }
                 .padding(.top, 20)
 
-                // What credits buy
                 VStack(alignment: .leading, spacing: 8) {
-                    creditInfoRow("5s Seedance Lite video", cost: "5")
-                    creditInfoRow("5s Seedance Pro video", cost: "10")
-                    creditInfoRow("5s Kling v2.1 video", cost: "15")
-                    creditInfoRow("AI Ad (full pipeline)", cost: "10")
+                    planInfoRow("Premium Voice generation")
+                    planInfoRow("No CreatorAI watermark")
+                    planInfoRow("Use your own fal.ai key on any plan")
+                    planInfoRow("Monthly or yearly access")
                 }
                 .padding(.horizontal, 20)
 
@@ -49,10 +47,10 @@ struct BuyCreditsView: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(creditLabel(for: package.storeProduct.productIdentifier))
+                                    Text(planLabel(for: package.storeProduct))
                                         .font(.system(size: 17, weight: .semibold))
                                         .foregroundColor(theme.text)
-                                    Text(creditSubLabel(for: package.storeProduct.productIdentifier))
+                                    Text(planSubLabel(for: package.storeProduct))
                                         .font(.system(size: 13))
                                         .foregroundColor(theme.textSecondary)
                                 }
@@ -111,7 +109,7 @@ struct BuyCreditsView: View {
         }
     }
 
-    private func creditInfoRow(_ label: String, cost: String) -> some View {
+    private func planInfoRow(_ label: String) -> some View {
         HStack {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 14))
@@ -120,27 +118,14 @@ struct BuyCreditsView: View {
                 .font(.system(size: 14))
                 .foregroundColor(theme.text)
             Spacer()
-            Text("\(cost) credits")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(theme.textSecondary)
         }
     }
 
-    private func creditLabel(for productId: String) -> String {
-        switch productId {
-        case "credits_100": return "100 Credits"
-        case "credits_200": return "200 Credits"
-        case "credits_300": return "300 Credits"
-        default: return productId
-        }
+    private func planLabel(for product: StoreProduct) -> String {
+        product.localizedTitle.isEmpty ? "Subscription" : product.localizedTitle
     }
 
-    private func creditSubLabel(for productId: String) -> String {
-        switch productId {
-        case "credits_100": return "~20 videos"
-        case "credits_200": return "~40 videos • 10% off"
-        case "credits_300": return "~60 videos • 17% off"
-        default: return ""
-        }
+    private func planSubLabel(for product: StoreProduct) -> String {
+        product.localizedDescription.isEmpty ? "Premium voice and watermark removal" : product.localizedDescription
     }
 }

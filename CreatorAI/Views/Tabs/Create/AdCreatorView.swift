@@ -187,7 +187,7 @@ struct AdCreatorView: View {
                 } else {
                     Image(systemName: "bolt.fill")
                         .font(.system(size: 20))
-                    Text("Generate · 10 credits")
+                    Text("Generate")
                         .font(.system(size: 17, weight: .semibold))
                 }
             }

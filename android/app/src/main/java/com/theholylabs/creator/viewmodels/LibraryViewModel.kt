@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.theholylabs.creator.models.Generation
+import com.theholylabs.creator.services.FirebaseDataService
 import com.theholylabs.creator.services.GenerationService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -52,6 +53,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             existing.removeAll { it.id == id }
             GenerationService.saveGenerationsLocal(getApplication(), existing)
             _generations.value = existing.sortedByDescending { it.createdAt }
+            userId?.let { FirebaseDataService.deleteGeneration(it, id) }
         }
     }
 }

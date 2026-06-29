@@ -23,7 +23,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("/Users/admin/Documents/GitHub/video-editor/android/CreatorAI_Android_Signing/release.jks")
+            storeFile = rootProject.file("CreatorAI_Android_Signing/release.jks")
             storePassword = "CreatorAI2024!"
             keyAlias = "upload"
             keyPassword = "CreatorAI2024!"
@@ -79,16 +79,17 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.5.0")
     implementation("io.coil-kt:coil-video:2.5.0")
 
-    implementation(platform(libs.supabase.bom))
-    implementation(libs.supabase.postgrest)
-    implementation(libs.supabase.storage)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.ktor.client.content.negotiation)
+    implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.play.services.auth)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.firebase.messaging)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.storage)
     implementation(libs.coroutines.android)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation(libs.appcompat)

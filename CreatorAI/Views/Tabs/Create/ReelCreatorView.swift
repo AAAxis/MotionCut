@@ -159,7 +159,7 @@ struct ReelCreatorView: View {
                 } else {
                     Image(systemName: "bolt.fill")
                         .font(.system(size: 20))
-                    Text("Generate Reel · \(viewModel.reelCreditCost) credits")
+                    Text("Generate Reel")
                         .font(.system(size: 17, weight: .semibold))
                 }
             }
@@ -431,6 +431,7 @@ extension Notification.Name {
     static let navigateToVideoEditor = Notification.Name("navigateToVideoEditor")
     static let navigateToGenerationStatus = Notification.Name("navigateToGenerationStatus")
     static let switchToLibraryTab = Notification.Name("switchToLibraryTab")
-    static let catalogUsePrompt = Notification.Name("catalogUsePrompt")
+    static let startVideoImport = Notification.Name("startVideoImport")
     static let prefillPrompt = Notification.Name("prefillPrompt")
+    static let applyEditorAIInstruction = Notification.Name("applyEditorAIInstruction")
 }

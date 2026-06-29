@@ -11,29 +11,11 @@ struct CreateView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                // Header + Credits
                 HStack {
                     Text("Create")
                         .font(.system(size: 29, weight: .semibold))
                         .foregroundColor(theme.text)
                     Spacer()
-                    Button {
-                        viewModel.showBuyCredits = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 12))
-                            Text("\(appState.credits >= 0 ? "\(appState.credits)" : "∞")")
-                                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        }
-                        .foregroundColor(theme.primary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule()
-                                .fill(theme.primary.opacity(0.12))
-                        )
-                    }
                 }
                 .padding(.bottom, 8)
 
@@ -94,15 +76,8 @@ struct CreateView: View {
             #if os(iOS)
             PaywallView()
                 .onPurchaseCompleted { customerInfo in
-                    let productId = customerInfo.nonSubscriptions
-                        .sorted { $0.purchaseDate > $1.purchaseDate }
-                        .first?.productIdentifier
                     Task {
-                        if let productId {
-                            await PurchaseService.shared.handlePurchaseCompleted(productId: productId, appState: appState)
-                        } else {
-                            await PurchaseService.shared.handlePurchaseCompleted(appState: appState)
-                        }
+                        await PurchaseService.shared.handlePurchaseCompleted(customerInfo: customerInfo, appState: appState)
                         viewModel.showBuyCredits = false
                     }
                 }
@@ -112,7 +87,7 @@ struct CreateView: View {
             #endif
         }
         .onAppear {
-            Task { await appState.fetchCredits() }
+            Task { await appState.refreshSubscriptionStatus() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .prefillPrompt)) { notification in
             if let prompt = notification.object as? String {

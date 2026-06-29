@@ -1,7 +1,8 @@
-Có gì mới trong 3.1:
+What's New in 3.3:
 
-• Danh mục — Khám phá video do cộng đồng tạo. Chạm để phát, chỉnh sửa prompt và biến nó thành của bạn.
-• Ghi âm giọng nói — Ghi âm trực tiếp trong trình chỉnh sửa. Xem dưới dạng sóng trên dòng thời gian.
-• Vuốt dòng thời gian — Vuốt để tìm kiếm từng khung hình.
-• Sửa lỗi tín dụng — Số dư tín dụng giờ đồng bộ giữa ứng dụng và bảng điều khiển web.
-• Sửa lỗi và cải thiện hiệu suất.
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

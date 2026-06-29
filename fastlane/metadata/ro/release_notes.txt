@@ -1,4 +1,8 @@
-• AI Ad Maker — creează reclame virale pentru TikTok, Reels și Shorts
-• Foto-în-Video — transformă orice foto într-un video generat de AI
-• Extragere Audio — extrage audio din orice video în fila Muzică
-• Remedieri erori și îmbunătățiri performanță
+What's New in 3.3:
+
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

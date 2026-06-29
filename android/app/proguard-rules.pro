@@ -5,8 +5,6 @@
 -keep class com.appsflyer.** { *; }
 -keep class com.android.installreferrer.** { *; }
 
-# Supabase / Ktor
--keep class io.github.jan.supabase.** { *; }
 -keep class io.ktor.** { *; }
 
 # Google Sign-In

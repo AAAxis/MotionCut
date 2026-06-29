@@ -33,7 +33,7 @@ struct AspectRatioView: View {
             HStack(spacing: 12) {
                 ForEach(ratios, id: \.value) { ratio in
                     Button {
-                        viewModel.aspectRatio = ratio.value
+                        viewModel.setAspectRatio(ratio.value)
                     } label: {
                         VStack(spacing: 8) {
                             Image(systemName: ratio.icon)

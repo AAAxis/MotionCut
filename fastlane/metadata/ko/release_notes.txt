@@ -1,7 +1,8 @@
-3.1 새로운 기능:
+What's New in 3.3:
 
-• 카탈로그 — 커뮤니티가 만든 영상을 둘러보세요. 탭하여 재생하고, 프롬프트를 편집하여 나만의 것으로 만드세요.
-• 보이스오버 녹음 — 에디터에서 직접 음성을 녹음하세요. 타임라인에 파형으로 표시됩니다.
-• 타임라인 스크러빙 — 타임라인을 밀어 프레임별로 탐색하세요.
-• 크레딧 수정 — 앱과 웹 대시보드 간 크레딧 잔액이 동기화됩니다.
-• 버그 수정 및 성능 개선.
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

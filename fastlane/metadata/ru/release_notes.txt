@@ -1,7 +1,8 @@
-Что нового в 3.1:
+What's New in 3.3:
 
-• Каталог — Смотрите видео, созданные сообществом. Нажмите для воспроизведения, отредактируйте промпт и сделайте его своим.
-• Запись голоса — Записывайте свой голос прямо в редакторе. Он отображается как волновая форма на таймлайне.
-• Прокрутка таймлайна — Проведите по таймлайну для покадровой навигации.
-• Исправление кредитов — Баланс теперь синхронизирован между приложением и веб-панелью.
-• Исправления ошибок и улучшения производительности.
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

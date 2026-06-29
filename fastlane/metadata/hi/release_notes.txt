@@ -1,4 +1,8 @@
-• AI विज्ञापन मेकर — TikTok, Reels और Shorts के लिए वायरल विज्ञापन बनाएं
-• फ़ोटो-से-वीडियो — किसी भी फ़ोटो को AI-जनित वीडियो में बदलें
-• ऑडियो निकालें — म्यूज़िक टैब में किसी भी वीडियो से ऑडियो निकालें
-• बग फ़िक्स और परफ़ॉर्मेंस सुधार
+What's New in 3.3:
+
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

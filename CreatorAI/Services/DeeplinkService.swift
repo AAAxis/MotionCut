@@ -42,12 +42,14 @@ enum DeeplinkService {
             let videoUri = query.first(where: { $0.name == "uri" || $0.name == "url" })?.value
             let videoName = query.first(where: { $0.name == "name" || $0.name == "title" })?.value ?? "Video"
             let userId = query.first(where: { $0.name == "userId" })?.value ?? "demo-user"
+            let aiInstruction = query.first(where: { $0.name == "ai" || $0.name == "instruction" })?.value
             return .videoEditor(VideoEditorParams(
                 videoUri: videoUri,
                 videoName: videoName,
                 takesJson: nil,
                 musicUrl: nil,
-                userId: userId
+                userId: userId,
+                aiInstruction: aiInstruction
             ))
         default:
             return nil

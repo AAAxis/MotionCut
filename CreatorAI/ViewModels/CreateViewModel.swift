@@ -52,6 +52,7 @@ struct AIModelOption: Identifiable {
 }
 
 let PRESET_AI_MODELS: [AIModelOption] = [
+    AIModelOption(id: "wan-video/wan-2.2-turbo", name: "Wan 2.2 Turbo", imageURL: "https://fal.ai/fal-ai/wan/v2.2-a14b/text-to-video/turbo", runCount: 0),
     AIModelOption(id: "bytedance/seedance-1-lite", name: "Seedance Lite", imageURL: "https://tjzk.replicate.delivery/models_models_featured_image/961a33d5-e27a-4b15-8cdd-3e37d5375297/replicate-seedance-1-lite.webp", runCount: 2_800_000),
     AIModelOption(id: "bytedance/seedance-1-pro", name: "Seedance Pro", imageURL: "https://tjzk.replicate.delivery/models_models_featured_image/b11bb650-a993-485b-b433-f1ba1c4cb90b/replicate-seedance-1-pro.webp", runCount: 1_700_000),
     AIModelOption(id: "kwaivgi/kling-v2.1", name: "Kling v2.1", imageURL: "https://tjzk.replicate.delivery/models_models_featured_image/a7690882-d1d2-44fb-b487-f41bd367adcf/replicate-prediction-2epyczsz.webp", runCount: 3_600_000),
@@ -116,7 +117,7 @@ class CreateViewModel: ObservableObject {
     @Published var reelTopic = ""
     @Published var reelLang = "en"
     @Published var reelDuration = 10
-    @Published var reelInfluencerId = "bytedance/seedance-1-lite"
+    @Published var reelInfluencerId = "wan-video/wan-2.2-turbo"
     @Published var reelReferenceVideoURL: URL?
     @Published var reelAvatarImageURL: String?  // HTTPS URL of uploaded avatar for i2v
     @Published var reelScrapedContext: String?   // Scraped page context to enrich prompt
@@ -150,6 +151,7 @@ class CreateViewModel: ObservableObject {
         if reelAvatarImageURL != nil { return 10 }
         let perSecond: Int
         switch reelInfluencerId {
+        case "wan-video/wan-2.2-turbo": perSecond = 1
         case "bytedance/seedance-1-lite": perSecond = 1
         case "bytedance/seedance-1-pro": perSecond = 2
         case "kwaivgi/kling-v2.1": perSecond = 3
@@ -440,12 +442,6 @@ class CreateViewModel: ObservableObject {
             return false
         }
 
-        // Cost: 10 credits (local deduction, matches Android)
-        guard appState.credits >= 10 else {
-            showBuyCredits = true
-            return false
-        }
-
         errorMessage = nil
         isGeneratingFreeReel = true
         freeReelProgress = nil
@@ -470,9 +466,6 @@ class CreateViewModel: ObservableObject {
             errorMessage = result.error ?? "Generation failed"
             return false
         }
-
-        // Deduct credits locally
-        appState.deductCredits(10)
 
         // Save generation and open editor
         let generation = Generation(

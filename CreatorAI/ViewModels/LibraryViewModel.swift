@@ -9,6 +9,9 @@ class LibraryViewModel: ObservableObject {
     @Published var downloadingIds: Set<String> = []
 
     private let userId: String
+    #if os(macOS)
+    private var activeSharingPicker: NSSharingServicePicker?
+    #endif
 
     init(userId: String = "demo-user") {
         self.userId = userId
@@ -18,6 +21,12 @@ class LibraryViewModel: ObservableObject {
         isLoading = true
         do {
             generations = try await GenerationService.shared.fetchGenerations(userId: userId)
+                .filter { generation in
+                    generation.status == .saved || generation.status == .completed || generation.status == .processing
+                }
+                .filter { generation in
+                    generation.status == .processing || generation.videoFileURL != nil || generation.usableTakesJson != nil
+                }
             await refreshProcessingGenerations()
             await loadThumbnails()
         } catch {
@@ -102,12 +111,26 @@ class LibraryViewModel: ObservableObject {
     }
 
     func deleteGeneration(_ generation: Generation) async {
+        withAnimation(.easeOut(duration: 0.18)) {
+            generations.removeAll { $0.id == generation.id }
+        }
+        thumbnails[generation.id] = nil
+        downloadingIds.remove(generation.id)
         await GenerationService.shared.deleteGeneration(id: generation.id)
-        generations.removeAll { $0.id == generation.id }
     }
 
-    func shareVideo(_ generation: Generation) {
-        guard let url = generation.videoFileURL else { return }
+    func shareVideo(_ generation: Generation) async {
+        let resolvedURL: URL?
+        if generation.isCloudOnly {
+            resolvedURL = await downloadCloudVideo(generation)
+        } else {
+            resolvedURL = generation.videoFileURL
+        }
+
+        guard let url = resolvedURL else {
+            print("[Share] No shareable video URL for generation \(generation.id)")
+            return
+        }
 
         #if os(iOS)
         let activityVC = UIActivityViewController(activityItems: [url], applicationActivities: nil)
@@ -116,9 +139,24 @@ class LibraryViewModel: ObservableObject {
             rootVC.present(activityVC, animated: true)
         }
         #else
+        guard url.isFileURL, FileManager.default.fileExists(atPath: url.path) else {
+            print("[Share] Local video file is missing: \(url)")
+            return
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
         let picker = NSSharingServicePicker(items: [url])
-        if let window = NSApp.keyWindow, let view = window.contentView {
-            picker.show(relativeTo: .zero, of: view, preferredEdge: .minY)
+        activeSharingPicker = picker
+        let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first { $0.isVisible }
+        if let view = window?.contentView {
+            let anchor = NSRect(x: view.bounds.midX, y: view.bounds.midY, width: 1, height: 1)
+            DispatchQueue.main.async {
+                picker.show(relativeTo: anchor, of: view, preferredEdge: .minY)
+            }
+        } else if let service = NSSharingService(named: .sendViaAirDrop) {
+            service.perform(withItems: [url])
+        } else {
+            print("[Share] No visible window available for share picker")
         }
         #endif
     }
@@ -127,7 +165,7 @@ class LibraryViewModel: ObservableObject {
     func downloadCloudVideo(_ generation: Generation) async -> URL? {
         guard generation.isCloudOnly,
               let remoteUrlString = generation.resultVideoUrl,
-              let remoteUrl = URL(string: remoteUrlString) else { return nil }
+              URL(string: remoteUrlString) != nil else { return nil }
 
         downloadingIds.insert(generation.id)
         defer { downloadingIds.remove(generation.id) }

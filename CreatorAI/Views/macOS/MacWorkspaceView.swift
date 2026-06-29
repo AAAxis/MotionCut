@@ -4,19 +4,27 @@ import UniformTypeIdentifiers
 
 // MARK: - Final Cut Pro-style Desktop Workspace
 
+private struct MacRenderStatus: Identifiable {
+    let id: String
+    let title: String
+}
+
 struct MacWorkspaceView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @StateObject private var libraryVM = LibraryViewModel()
+    @StateObject private var defaultEditorVM = VideoEditorViewModel(params: VideoEditorParams(userId: "demo-user"))
     @State private var editorVM: VideoEditorViewModel?
     @State private var editorId = UUID() // Forces view recreation when project changes
 
     @State private var showBrowser = true
     @State private var showInspector = true
     @State private var showProfile = false
+    @State private var isSharing = false
+    @State private var renderStatus: MacRenderStatus?
 
     private var activeEditor: VideoEditorViewModel {
-        editorVM ?? VideoEditorViewModel(params: VideoEditorParams(userId: "demo-user"))
+        editorVM ?? defaultEditorVM
     }
 
     var body: some View {
@@ -77,6 +85,25 @@ struct MacWorkspaceView: View {
                 .animation(.easeInOut(duration: 0.3), value: activeEditor.aiGenerating)
             }
 
+            if isSharing {
+                HStack(spacing: 10) {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .tint(.white)
+                    Text("Opening render screen...")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(theme.primary.opacity(0.9)))
+                .padding(.horizontal, 20)
+                .padding(.bottom, 8)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.easeInOut(duration: 0.2), value: isSharing)
+            }
+
             // Error toast
             if let error = activeEditor.processingError {
                 HStack(spacing: 8) {
@@ -115,38 +142,45 @@ struct MacWorkspaceView: View {
                 .help("Toggle Inspector")
             }
 
-            ToolbarItem(id: "catalog", placement: .primaryAction) {
-                Button {
-                    if let url = URL(string: "https://www.creatorai.art/en/catalog") {
-                        #if os(macOS)
-                        NSWorkspace.shared.open(url)
-                        #else
-                        UIApplication.shared.open(url)
-                        #endif
-                    }
-                } label: {
-                    Label("Catalog", systemImage: "rectangle.grid.2x2")
-                }
-                .help("Open Catalog in Browser")
-            }
-
             ToolbarItem(id: "profile", placement: .primaryAction) {
                 Button {
                     showProfile = true
                 } label: {
-                    Image(systemName: "person.circle")
-                        .font(.system(size: 16))
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
                 }
                 .help("Profile & Settings")
             }
 
             ToolbarItem(id: "export", placement: .primaryAction) {
                 Button {
-                    Task { await editorVM?.saveVideo() }
+                    withAnimation(.spring(response: 0.18, dampingFraction: 0.72)) {
+                        isSharing = true
+                    }
+                    Task {
+                        await activeEditor.saveVideo()
+                        if let generationId = activeEditor.exportGenerationId {
+                            await MainActor.run {
+                                renderStatus = MacRenderStatus(
+                                    id: generationId,
+                                    title: activeEditor.videoName
+                                )
+                            }
+                        }
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        await MainActor.run {
+                            withAnimation(.easeOut(duration: 0.18)) {
+                                isSharing = false
+                            }
+                        }
+                    }
                 } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
+                    Label(isSharing ? "Opening..." : "Share", systemImage: isSharing ? "hourglass" : "square.and.arrow.up")
+                        .scaleEffect(isSharing ? 0.96 : 1)
+                        .animation(.spring(response: 0.18, dampingFraction: 0.72), value: isSharing)
                 }
                 .help("Export Video")
+                .disabled(isSharing || activeEditor.isGenerating || !activeEditor.canExport)
             }
         }
         .sheet(isPresented: $showProfile) {
@@ -162,6 +196,17 @@ struct MacWorkspaceView: View {
             }
             .frame(minWidth: 500, minHeight: 400)
         }
+        .sheet(item: $renderStatus) { status in
+            NavigationStack {
+                GenerationStatusView(
+                    generationId: status.id,
+                    title: status.title,
+                    isLocalExport: true
+                )
+                .environment(\.theme, AppColors(isDark: true))
+            }
+            .frame(minWidth: 520, minHeight: 720)
+        }
         .onChange(of: activeEditor.aiGenerating) { generating in
             if !generating && activeEditor.aiStatus.isEmpty {
                 // AI generation completed — refresh library
@@ -169,6 +214,8 @@ struct MacWorkspaceView: View {
             }
         }
         .onAppear {
+            defaultEditorVM.configureAudioSessionForMusic()
+            defaultEditorVM.rebuildPlaylistIfNeeded()
             Task {
                 await appState.fetchCredits()
                 await libraryVM.loadGenerations()
@@ -209,7 +256,7 @@ struct MacWorkspaceView: View {
             generationId: generation.id,
             videoUri: fileURL.isFileURL ? fileURL.path : fileURL.absoluteString,
             videoName: generation.videoName,
-            takesJson: generation.takesJson,
+            takesJson: generation.usableTakesJson,
             musicUrl: generation.resolvedMusicFile,
             userId: generation.userId ?? appState.userId ?? "demo-user"
         )
@@ -322,9 +369,22 @@ struct MediaBrowserPanel: View {
         let id = UUID().uuidString
         let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
         let dest = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("\(id).\(ext)")
-        try? FileManager.default.copyItem(at: url, to: dest)
+        do {
+            try FileStorageService.shared.copyFile(from: url, to: dest)
+        } catch {
+            print("[MacImport] Copy failed: \(error)")
+            return
+        }
 
         let videoName = url.deletingPathExtension().lastPathComponent
+        let clip = Clip(
+            id: 1,
+            uri: dest.path,
+            name: videoName,
+            mimeType: ext.lowercased() == "mov" ? "video/quicktime" : "video/mp4",
+            localUri: dest.path
+        )
+        let takesJson = VideoEditorViewModel.serializeClipsForStorage([clip])
 
         // Save as a Generation so it appears in the Media Browser
         let generation = Generation(
@@ -334,7 +394,8 @@ struct MediaBrowserPanel: View {
             resultVideoUrl: nil,
             status: .saved,
             createdAt: Date(),
-            userId: nil
+            userId: nil,
+            takesJson: takesJson
         )
         Task {
             await GenerationService.shared.saveGeneration(generation)
@@ -345,6 +406,7 @@ struct MediaBrowserPanel: View {
             generationId: id,
             videoUri: dest.absoluteString,
             videoName: videoName,
+            takesJson: takesJson,
             userId: "demo-user"
         )
         onImport?(params)
@@ -387,7 +449,7 @@ struct MediaBrowserItem: View {
                 }
             }
 
-            Text(generation.videoName)
+            Text(generation.displayName)
                 .font(.system(size: 10))
                 .foregroundColor(theme.textSecondary)
                 .lineLimit(1)
@@ -595,6 +657,10 @@ struct MacTimelinePanel: View {
     @Environment(\.theme) var theme
     @State private var showMusicPicker = false
     @State private var showClipPicker = false
+    @State private var showMusicSheet = false
+    @State private var showSubsSheet = false
+    @State private var activeToolSubmenu: MacToolSubmenu?
+    @State private var transitionBoundaryIndex = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -610,14 +676,21 @@ struct MacTimelinePanel: View {
 
                 Divider().frame(height: 16)
 
-                toolbarButton("sparkles", "AI") { viewModel.showAiPrompt = true }
-                toolbarButton("scissors", "Cut") { viewModel.splitClipAtPlayhead() }
-                toolbarButton("arrow.triangle.2.circlepath", "Change") {
-                    viewModel.pexelsReplaceMode = true
-                    viewModel.showPexelsSheet = true
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        if let activeToolSubmenu {
+                            submenuButtons(activeToolSubmenu)
+                        } else {
+                            switch viewModel.timelineSelection {
+                            case .none:
+                                mainActionButtons
+                            default:
+                                selectedActionButtons
+                            }
+                        }
+                    }
+                    .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.82), value: activeToolSubmenu != nil)
                 }
-                toolbarButton("trash", "Delete") { viewModel.removeClip(at: viewModel.activeClipIndex) }
-                toolbarButton("mic", "Voice") { viewModel.showVoiceoverSheet = true }
 
                 Spacer()
             }
@@ -696,6 +769,20 @@ struct MacTimelinePanel: View {
                 Task { await viewModel.selectMusic(track) }
             }
         }
+        .sheet(isPresented: $showMusicSheet) {
+            SheetWrapper(title: "Music", isPresented: $showMusicSheet) {
+                MusicTabView(viewModel: viewModel) {
+                    showMusicSheet = false
+                }
+            }
+            .frame(minWidth: 520, minHeight: 440)
+        }
+        .sheet(isPresented: $showSubsSheet) {
+            SheetWrapper(title: "Subtitles", isPresented: $showSubsSheet) {
+                SubtitlesTabView(viewModel: viewModel)
+            }
+            .frame(minWidth: 520, minHeight: 440)
+        }
         .sheet(isPresented: $viewModel.showAiPrompt) {
             SheetWrapper(title: "AI Clip", isPresented: $viewModel.showAiPrompt) {
                 AiClipSheet(viewModel: viewModel)
@@ -707,6 +794,18 @@ struct MacTimelinePanel: View {
                 SpeedControlView(viewModel: viewModel)
             }
             .frame(minWidth: 400, minHeight: 300)
+        }
+        .sheet(isPresented: $viewModel.showVolumeSheet) {
+            SheetWrapper(title: "Volume", isPresented: $viewModel.showVolumeSheet) {
+                VolumeControlView(viewModel: viewModel)
+            }
+            .frame(minWidth: 400, minHeight: 300)
+        }
+        .sheet(isPresented: $viewModel.showLayoutSheet) {
+            SheetWrapper(title: "Layout", isPresented: $viewModel.showLayoutSheet) {
+                ClipLayoutView(viewModel: viewModel)
+            }
+            .frame(minWidth: 440, minHeight: 360)
         }
         .sheet(isPresented: $viewModel.showAspectRatioSheet) {
             SheetWrapper(title: "Aspect Ratio", isPresented: $viewModel.showAspectRatioSheet) {
@@ -732,12 +831,13 @@ struct MacTimelinePanel: View {
         }
         .fileImporter(
             isPresented: $showClipPicker,
-            allowedContentTypes: [.movie, .video, .mpeg4Movie, .quickTimeMovie],
+            allowedContentTypes: [.movie, .video, .mpeg4Movie, .quickTimeMovie, .image],
             allowsMultipleSelection: false
         ) { result in
             if case .success(let urls) = result, let url = urls.first {
                 guard url.startAccessingSecurityScopedResource() else { return }
                 defer { url.stopAccessingSecurityScopedResource() }
+                let isImage = UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true
                 let ext = url.pathExtension.isEmpty ? "mp4" : url.pathExtension
                 let dest = FileStorageService.shared.clipCacheDirectory
                     .appendingPathComponent("\(UUID().uuidString).\(ext)")
@@ -745,13 +845,221 @@ struct MacTimelinePanel: View {
                 if viewModel.player == nil {
                     onVideoDropped?(dest)
                 } else {
-                    viewModel.addClipFromGallery(url: dest)
+                    viewModel.addClipFromGallery(url: dest, mimeType: isImage ? "image/\(ext)" : "video/mp4")
                 }
             }
         }
     }
 
-    private func toolbarButton(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
+    @ViewBuilder
+    private func submenuButtons(_ submenu: MacToolSubmenu) -> some View {
+        toolbarButton("chevron.left", "Back") {
+            activeToolSubmenu = nil
+        }
+
+        switch submenu {
+        case .filters:
+            filterSubmenuButtons
+        case .transitions:
+            transitionSubmenuButtons
+        }
+    }
+
+    @ViewBuilder
+    private var mainActionButtons: some View {
+        toolbarButton("music.note", "Music") {
+            showMusicSheet = true
+        }
+
+        toolbarButton(viewModel.voiceoverFileURL != nil ? "mic.fill" : "mic", "Voice", color: viewModel.voiceoverFileURL != nil ? theme.primary : nil) {
+            if viewModel.voiceoverFileURL != nil {
+                viewModel.selectVoiceover()
+            }
+            viewModel.showVoiceoverSheet = true
+        }
+
+        toolbarButton("sparkles", "AI") {
+            viewModel.showAiPrompt = true
+        }
+
+        toolbarButton("folder", "File") {
+            showClipPicker = true
+        }
+
+        toolbarButton("photo.on.rectangle.angled", "Pexels") {
+            viewModel.pexelsReplaceMode = true
+            viewModel.showPexelsSheet = true
+        }
+
+        toolbarButton("rectangle.2.swap", "Trans") {
+            transitionBoundaryIndex = min(max(0, viewModel.activeClipIndex), max(0, viewModel.clips.count - 2))
+            activeToolSubmenu = .transitions
+        }
+
+        toolbarButton("captions.bubble", "Subs") {
+            showSubsSheet = true
+        }
+    }
+
+    @ViewBuilder
+    private var selectedActionButtons: some View {
+        toolbarButton("chevron.left", "Back") {
+            viewModel.clearTimelineSelection()
+        }
+
+        switch viewModel.timelineSelection {
+        case .video:
+            videoSelectedActionButtons
+        case .text:
+            textSelectedActionButtons
+        case .music, .voiceover:
+            audioSelectedActionButtons
+        case .none:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var videoSelectedActionButtons: some View {
+        toolbarButton("gauge.with.dots.needle.33percent", "Speed", color: viewModel.activeClipSpeed != 1.0 ? theme.primary : nil) {
+            viewModel.showSpeedSheet = true
+        }
+
+        toolbarButton("camera.filters", "Filter") {
+            activeToolSubmenu = .filters
+        }
+
+        toolbarButton("pip", "Layout") {
+            viewModel.showLayoutSheet = true
+        }
+
+        toolbarButton("rectangle.2.swap", "Trans", color: canEditTransitionFromSelection ? nil : theme.textTertiary) {
+            if let index = selectedVideoIndexForTools, viewModel.clips.count >= 2 {
+                transitionBoundaryIndex = min(index, max(0, viewModel.clips.count - 2))
+                activeToolSubmenu = .transitions
+            }
+        }
+
+        toolbarButton("scissors", "Cut") {
+            viewModel.splitClipAtPlayhead()
+        }
+
+        toolbarButton("trash", "Delete", color: viewModel.canDeleteSelectedTimelineItem ? .red : theme.textTertiary) {
+            if viewModel.canDeleteSelectedTimelineItem {
+                viewModel.deleteSelectedTimelineItem()
+            }
+        }
+
+        toolbarButton("rectangle.portrait", "4:5") {
+            viewModel.setAspectRatio("4:5")
+        }
+
+        toolbarButton("slider.horizontal.3", "Volume", color: viewModel.canAdjustSelectedTimelineVolume ? nil : theme.textTertiary) {
+            if viewModel.canAdjustSelectedTimelineVolume {
+                viewModel.showVolumeSheet = true
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var textSelectedActionButtons: some View {
+        toolbarButton("captions.bubble", "Edit") {
+            showSubsSheet = true
+        }
+
+        toolbarButton("trash", "Delete", color: viewModel.canDeleteSelectedTimelineItem ? .red : theme.textTertiary) {
+            if viewModel.canDeleteSelectedTimelineItem {
+                viewModel.deleteSelectedTimelineItem()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var audioSelectedActionButtons: some View {
+        toolbarButton("slider.horizontal.3", "Volume", color: viewModel.canAdjustSelectedTimelineVolume ? nil : theme.textTertiary) {
+            if viewModel.canAdjustSelectedTimelineVolume {
+                viewModel.showVolumeSheet = true
+            }
+        }
+
+        toolbarButton("trash", "Delete", color: viewModel.canDeleteSelectedTimelineItem ? .red : theme.textTertiary) {
+            if viewModel.canDeleteSelectedTimelineItem {
+                viewModel.deleteSelectedTimelineItem()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var filterSubmenuButtons: some View {
+        if let index = selectedVideoIndexForTools {
+            ForEach(["None", "Warm", "Cool", "Punch", "Mono", "Fade"], id: \.self) { filter in
+                toolbarButton(
+                    filter == "None" ? "circle.slash" : "camera.filters",
+                    filter,
+                    color: viewModel.clips[index].filterName == filter ? theme.primary : nil
+                ) {
+                    viewModel.updateClipFilter(at: index, filterName: filter)
+                }
+            }
+        } else {
+            toolbarButton("video.slash", "No clip", color: theme.textTertiary) {}
+        }
+    }
+
+    @ViewBuilder
+    private var transitionSubmenuButtons: some View {
+        if viewModel.clips.count >= 2 {
+            let boundaryIndex = safeTransitionBoundaryIndex
+
+            toolbarButton("chevron.left.2", "Prev", color: boundaryIndex > 0 ? nil : theme.textTertiary) {
+                transitionBoundaryIndex = max(0, boundaryIndex - 1)
+            }
+
+            toolbarButton("chevron.right.2", "Next", color: boundaryIndex < viewModel.clips.count - 2 ? nil : theme.textTertiary) {
+                transitionBoundaryIndex = min(max(0, viewModel.clips.count - 2), boundaryIndex + 1)
+            }
+
+            ForEach(["None", "Fade", "Dip"], id: \.self) { transition in
+                toolbarButton(
+                    transitionIcon(for: transition),
+                    transition,
+                    color: viewModel.clips[boundaryIndex].transitionName == transition ? theme.primary : nil
+                ) {
+                    withAnimation(.interactiveSpring(response: 0.28, dampingFraction: 0.82)) {
+                        viewModel.updateClipTransition(at: boundaryIndex, transitionName: transition)
+                    }
+                }
+            }
+        } else {
+            toolbarButton("rectangle.2.swap", "Need 2", color: theme.textTertiary) {}
+        }
+    }
+
+    private var selectedVideoIndexForTools: Int? {
+        if case .video(let index) = viewModel.timelineSelection, viewModel.clips.indices.contains(index) {
+            return index
+        }
+        return viewModel.clips.indices.contains(viewModel.activeClipIndex) ? viewModel.activeClipIndex : nil
+    }
+
+    private var canEditTransitionFromSelection: Bool {
+        guard let index = selectedVideoIndexForTools else { return false }
+        return viewModel.clips.count >= 2 && index < viewModel.clips.count - 1
+    }
+
+    private var safeTransitionBoundaryIndex: Int {
+        min(max(0, transitionBoundaryIndex), max(0, viewModel.clips.count - 2))
+    }
+
+    private func transitionIcon(for transition: String) -> String {
+        switch transition {
+        case "Fade": return "circle.lefthalf.filled"
+        case "Dip": return "moonphase.new.moon"
+        default: return "circle.slash"
+        }
+    }
+
+    private func toolbarButton(_ icon: String, _ label: String, color: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 2) {
                 Image(systemName: icon)
@@ -759,8 +1067,14 @@ struct MacTimelinePanel: View {
                 Text(label)
                     .font(.system(size: 9))
             }
-            .foregroundColor(theme.text)
+            .foregroundColor(color ?? theme.text)
+            .frame(minWidth: 46)
         }
         .buttonStyle(.plain)
     }
+}
+
+private enum MacToolSubmenu {
+    case filters
+    case transitions
 }

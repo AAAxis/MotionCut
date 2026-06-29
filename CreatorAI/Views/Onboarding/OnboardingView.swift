@@ -138,7 +138,7 @@ struct OnboardingView: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
 
-            Text("Sign in to sync your library across devices. You can skip and sign in later from Profile.")
+            Text("Sign in to sync your library across devices. You can skip and sign in later from the profile icon.")
                 .font(.system(size: 15))
                 .foregroundColor(theme.textSecondary)
                 .multilineTextAlignment(.center)

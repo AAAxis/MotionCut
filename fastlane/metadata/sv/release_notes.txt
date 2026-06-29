@@ -1,4 +1,8 @@
-• AI Annonsverktyg — skapa virala annonser för TikTok, Reels & Shorts
-• Foto-till-Video — förvandla alla foton till AI-genererad video
-• Extrahera Ljud — hämta ljud från valfri video i fliken Musik
-• Buggfixar och prestandaförbättringar
+What's New in 3.3:
+
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

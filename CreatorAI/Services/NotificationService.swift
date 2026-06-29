@@ -55,4 +55,42 @@ final class NotificationService {
             }
         }
     }
+
+    func notifyAgentDone(title: String = "Agent done", body: String = "Your timeline edit is ready.") {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "agent-done-\(UUID().uuidString)",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("[Notification] Failed to schedule: \(error)")
+            }
+        }
+    }
+
+    func notifyAgentFailed(title: String = "Agent stopped", body: String = "The timeline edit could not finish.") {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "agent-failed-\(UUID().uuidString)",
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+        )
+
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("[Notification] Failed to schedule: \(error)")
+            }
+        }
+    }
 }

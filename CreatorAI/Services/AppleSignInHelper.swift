@@ -7,8 +7,11 @@ import UIKit
 import AppKit
 #endif
 
-/// Runs native Sign in with Apple and returns the identity token and nonce for Supabase.
-/// Enable "Sign in with Apple" capability in Xcode and configure Apple provider in Supabase Dashboard.
+@MainActor
+private var activeAppleSignInDelegate: AppleSignInDelegate?
+
+/// Runs native Sign in with Apple and returns the identity token and nonce for Firebase Auth.
+/// Enable "Sign in with Apple" capability in Xcode and configure the Apple provider in Firebase.
 @MainActor
 func performAppleSignIn() async throws -> (idToken: String, nonce: String) {
     let rawNonce = randomNonce()
@@ -22,11 +25,13 @@ func performAppleSignIn() async throws -> (idToken: String, nonce: String) {
     let delegate = AppleSignInDelegate()
     controller.delegate = delegate
     controller.presentationContextProvider = delegate
-    controller.performRequests()
 
     return try await withCheckedThrowingContinuation { continuation in
         delegate.continuation = continuation
         delegate.rawNonce = rawNonce
+        delegate.controller = controller
+        activeAppleSignInDelegate = delegate
+        controller.performRequests()
     }
 }
 
@@ -53,6 +58,7 @@ private func sha256(_ string: String) -> String {
 private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding {
     var continuation: CheckedContinuation<(idToken: String, nonce: String), Error>?
     var rawNonce: String?
+    var controller: ASAuthorizationController?
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) {
         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
@@ -61,10 +67,14 @@ private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDele
               let nonce = rawNonce else {
             continuation?.resume(throwing: AppleSignInError.missingCredential)
             continuation = nil
+            self.controller = nil
+            activeAppleSignInDelegate = nil
             return
         }
         continuation?.resume(returning: (idToken, nonce))
         continuation = nil
+        self.controller = nil
+        activeAppleSignInDelegate = nil
     }
 
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) {
@@ -74,6 +84,8 @@ private final class AppleSignInDelegate: NSObject, ASAuthorizationControllerDele
             continuation?.resume(throwing: error)
         }
         continuation = nil
+        self.controller = nil
+        activeAppleSignInDelegate = nil
     }
 
     func presentationAnchor(for controller: ASAuthorizationController) -> ASPresentationAnchor {

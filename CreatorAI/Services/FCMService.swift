@@ -4,7 +4,7 @@ import FirebaseMessaging
 import UserNotifications
 
 /// Handles FCM token registration and push notification display.
-/// Mirrors Android FCMService — saves token to Supabase app_users table.
+/// Mirrors Android FCMService — saves token to the Firestore user document.
 final class FCMService: NSObject, MessagingDelegate, UNUserNotificationCenterDelegate {
     static let shared = FCMService()
 
@@ -38,7 +38,7 @@ final class FCMService: NSObject, MessagingDelegate, UNUserNotificationCenterDel
             }
             print("[FCM] Token: \(token)")
             Task {
-                await SupabaseService.shared.saveFCMToken(userId: userId, token: token)
+                await FirebaseDataService.shared.saveFCMToken(userId: userId, token: token)
             }
         }
     }
@@ -50,10 +50,10 @@ final class FCMService: NSObject, MessagingDelegate, UNUserNotificationCenterDel
         guard let fcmToken else { return }
         print("[FCM] Token refreshed: \(fcmToken)")
 
-        // Get cached userId and update Supabase
+        // Get cached userId and update Firestore.
         if let userId = UserDefaults.standard.string(forKey: "cached_user_id") {
             Task {
-                await SupabaseService.shared.saveFCMToken(userId: userId, token: fcmToken)
+                await FirebaseDataService.shared.saveFCMToken(userId: userId, token: fcmToken)
             }
         }
     }

@@ -1,7 +1,7 @@
 import SwiftUI
 import RevenueCat
 
-/// Native macOS credits purchase view using RevenueCat SDK directly.
+/// Native macOS subscription view using RevenueCat SDK directly.
 struct MacBuyCreditsPlaceholder: View {
     let dismiss: () -> Void
     @EnvironmentObject var appState: AppState
@@ -10,20 +10,11 @@ struct MacBuyCreditsPlaceholder: View {
     @State private var purchaseResult: String?
     @State private var hoveringId: String?
 
-    private let creditMap: [String: Int] = [
-        "credits_100": 100,
-        "credits_200": 200,
-        "credits_300": 300,
-        "creatorai_100_credits": 100,
-        "creatorai_200_credits": 200,
-        "creatorai_300_credits": 300,
-    ]
-
     var body: some View {
         VStack(spacing: 20) {
             // Header
             HStack {
-                Text("Buy Credits")
+                Text("Subscription")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundColor(theme.text)
                 Spacer()
@@ -37,15 +28,11 @@ struct MacBuyCreditsPlaceholder: View {
             }
             .padding(.bottom, 4)
 
-            // Current balance
             HStack(spacing: 6) {
-                Image(systemName: "bolt.fill")
-                    .foregroundColor(.orange)
-                Text("Current balance:")
+                Image(systemName: "crown.fill")
+                    .foregroundColor(theme.primary)
+                Text(appState.hasUnlimitedAPIUsage ? "\(appState.subscriptionPlan.displayName) plan active" : "Voice + no watermark")
                     .font(.system(size: 14))
-                    .foregroundColor(theme.textSecondary)
-                Text("\(appState.credits >= 0 ? "\(appState.credits)" : "Unlimited")")
-                    .font(.system(size: 14, weight: .bold))
                     .foregroundColor(theme.text)
             }
             .padding(.vertical, 8)
@@ -58,7 +45,7 @@ struct MacBuyCreditsPlaceholder: View {
             if purchaseService.packages.isEmpty {
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("Loading credit packs...")
+                    Text("Loading plans...")
                         .font(.system(size: 13))
                         .foregroundColor(theme.textTertiary)
                 }
@@ -67,9 +54,8 @@ struct MacBuyCreditsPlaceholder: View {
                 VStack(spacing: 10) {
                     ForEach(purchaseService.packages, id: \.identifier) { package in
                         let product = package.storeProduct
-                        let credits = creditMap[product.productIdentifier]
-                        let title = credits != nil ? "\(credits!) Credits" : product.localizedTitle
-                        let subtitle = credits != nil ? "\(credits!) seconds of video" : product.localizedDescription
+                        let title = product.localizedTitle
+                        let subtitle = product.localizedDescription.isEmpty ? "Premium voice and watermark removal" : product.localizedDescription
                         let isHovering = hoveringId == package.identifier
 
                         HStack {

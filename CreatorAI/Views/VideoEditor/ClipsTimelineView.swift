@@ -1,5 +1,8 @@
 import SwiftUI
 import AVFoundation
+#if os(macOS)
+import AppKit
+#endif
 
 // MARK: - CapCut-style Multi-track Timeline
 
@@ -7,123 +10,250 @@ struct ClipsTimelineView: View {
     @ObservedObject var viewModel: VideoEditorViewModel
     @Environment(\.theme) var theme
     @State private var draggedClipIndex: Int? = nil
+    @State private var musicTrimBases: [String: (start: Double, end: Double)] = [:]
+    @State private var musicMoveBases: [String: (start: Double, end: Double)] = [:]
+    @State private var textTrimBases: [Int: (start: Double, end: Double)] = [:]
+    @State private var textMoveBases: [Int: (start: Double, end: Double)] = [:]
+    @State private var activeItemDrag = false
 
     private let thumbHeight: CGFloat = 52
+    private let attachedTextHeight: CGFloat = 24
+    private let videoLaneSpacing: CGFloat = 6
     private let musicRowHeight: CGFloat = 36
     private let textRowHeight: CGFloat = 28
     private let timeRulerHeight: CGFloat = 22
     private let minClipWidth: CGFloat = 60
     private let basePixelsPerSecond: CGFloat = 50
+    private let minZoomScale: CGFloat = 0.45
+    private let maxZoomScale: CGFloat = 4.0
     @State private var zoomScale: CGFloat = 1.0
+    @State private var zoomGestureBaseScale: CGFloat?
     private var pixelsPerSecond: CGFloat { basePixelsPerSecond * zoomScale }
     private let screenPadding: CGFloat = ScreenSize.width / 2
 
     private var totalDuration: Double {
-        if viewModel.clips.count > 1 {
-            return viewModel.clips.reduce(0) { $0 + ($1.beatDuration ?? $1.sourceDuration ?? 3.0) }
-        }
-        // For single clip, prefer the player's reported duration (most accurate)
-        if viewModel.duration > 0 { return viewModel.duration }
-        return viewModel.clips.first.flatMap { $0.sourceDuration ?? $0.beatDuration } ?? 10.0
+        max(0.1, viewModel.timelineDisplayDuration)
     }
 
     private var timelineContentWidth: CGFloat {
-        let clipsWidth = viewModel.clips.reduce(CGFloat(0)) { $0 + clipWidth(for: $1) } + CGFloat(max(0, viewModel.clips.count - 1)) * 2
+        let clipsWidth = timelineClips.reduce(CGFloat(0)) { partial, item in
+            max(partial, item.x + clipWidth(for: item.clip))
+        }
+        let pendingWidth = pendingVideoItems.reduce(CGFloat(0)) { partial, item in
+            max(partial, item.x + item.width)
+        }
         let durationWidth = totalDuration * pixelsPerSecond
-        return max(clipsWidth, durationWidth)
+        return max(clipsWidth, pendingWidth, durationWidth)
+    }
+
+    private var videoLaneCount: Int {
+        min(2, max(1, viewModel.clips.count))
+    }
+
+    private var videoRowsHeight: CGFloat {
+        CGFloat(videoLaneCount) * videoClipBlockHeight + CGFloat(max(0, videoLaneCount - 1)) * videoLaneSpacing
+    }
+
+    private var videoClipBlockHeight: CGFloat {
+        thumbHeight + attachedTextHeight
+    }
+
+    private var timelineClips: [(index: Int, clip: Clip, x: CGFloat, lane: Int)] {
+        var x: CGFloat = 0
+        return viewModel.clips.enumerated().map { index, clip in
+            defer {
+                x += clipWidth(for: clip) + 2
+            }
+            return (index: index, clip: clip, x: x, lane: index % videoLaneCount)
+        }
+    }
+
+    private var pendingVideoItems: [(slot: Int, x: CGFloat, width: CGFloat, lane: Int)] {
+        guard viewModel.pendingVideoSlots > 0 else { return [] }
+        let startX = timelineClips.reduce(CGFloat(0)) { partial, item in
+            max(partial, item.x + clipWidth(for: item.clip) + 2)
+        }
+        let pendingWidth = max(minClipWidth, CGFloat(1.6) * pixelsPerSecond)
+        return (0..<min(1, viewModel.pendingVideoSlots)).map { slot in
+            (
+                slot: slot,
+                x: startX + CGFloat(slot) * (pendingWidth + 2),
+                width: pendingWidth,
+                lane: (viewModel.clips.count + slot) % videoLaneCount
+            )
+        }
     }
 
     @State private var lastAutoScrollTime: Int = -1
     @State private var userIsDragging = false
     @State private var scrollOffset: CGFloat = 0
+    @State private var dragStartOffset: CGFloat = 0
 
     var body: some View {
-        ZStack {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    ZStack(alignment: .leading) {
-                        VStack(alignment: .leading, spacing: 0) {
-                            timeRuler
-                            videoClipsRow
-                            if viewModel.selectedMusic != nil { musicWaveformRow }
-                            if viewModel.voiceoverFileURL != nil { voiceoverWaveformRow }
-                            textTrackRow
-                        }
+        GeometryReader { geo in
+            let sidePadding = geo.size.width / 2
+            let playbackOffset = clampedTimelineOffset(CGFloat(currentTimelineTime) * pixelsPerSecond)
+            let effectiveOffset = userIsDragging ? scrollOffset : playbackOffset
 
-                        // Scroll offset tracker — inside content so it moves with scroll
-                        GeometryReader { geo in
-                            Color.clear
-                                .preference(key: ScrollOffsetKey.self, value: geo.frame(in: .named("timeline")).minX)
-                        }
-                        .frame(width: 1, height: 1)
-
-                        // Time markers for auto-scroll (every 0.5s)
-                        let markerCount = max(1, Int(totalDuration * 2) + 1)
-                        ForEach(0..<markerCount, id: \.self) { tick in
-                            Color.clear
-                                .frame(width: 1, height: 1)
-                                .id("time_\(tick)")
-                                .offset(x: CGFloat(Double(tick) * 0.5) * pixelsPerSecond)
-                        }
-                    }
-                    .padding(.leading, screenPadding)
-                    .padding(.trailing, screenPadding)
+            ZStack {
+                timelineContent
+                    .padding(.leading, sidePadding)
+                    .padding(.trailing, sidePadding)
                     .padding(.vertical, 6)
-                }
-                .onPreferenceChange(ScrollOffsetKey.self) { value in
-                    // value = content leading edge relative to timeline coordinate space
-                    // When scrolled right, value becomes more negative
-                    // Subtract screenPadding since content has that leading padding
-                    let offset = -(value - screenPadding)
-                    scrollOffset = offset
+                    .offset(x: -effectiveOffset)
+                    .animation(viewModel.isPlaying && !userIsDragging ? .linear(duration: 0.24) : nil, value: currentTimelineTime)
 
-                    // Seek video when user is scrolling
-                    if userIsDragging {
-                        let seconds = max(0, min(Double(offset) / Double(pixelsPerSecond), totalDuration))
-                        viewModel.seekToTime(seconds)
+                playhead
+                    .frame(height: geo.size.height)
+                    .position(x: sidePadding, y: geo.size.height / 2)
+
+                VStack {
+                    HStack {
+                        undoHistoryControl
+                            .padding(.top, 5)
+                            .padding(.leading, 8)
+                        Spacer()
+                        zoomControls
+                            .padding(.top, 5)
+                            .padding(.trailing, 8)
                     }
+                    Spacer()
                 }
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 5)
-                        .onChanged { _ in
-                            if !userIsDragging {
-                                userIsDragging = true
-                                viewModel.pauseForScrub()
-                            }
-                        }
-                        .onEnded { _ in
-                            // Keep drag mode — reset happens when play starts
-                        }
-                )
-                .simultaneousGesture(
-                    MagnificationGesture()
-                        .onChanged { scale in
-                            let newZoom = max(0.5, min(4.0, zoomScale * scale))
-                            zoomScale = newZoom
-                        }
-                )
-                .onChange(of: viewModel.isPlaying) { playing in
-                    if playing {
-                        userIsDragging = false
-                        lastAutoScrollTime = -1 // Force immediate scroll sync
+
+                #if os(macOS)
+                MacTimelineTrackpadBridge(
+                    onScroll: { deltaX, deltaY in
+                        handleMacTrackpadScroll(deltaX: deltaX, deltaY: deltaY)
+                    },
+                    onMagnify: { magnification in
+                        handleMacTrackpadMagnify(magnification)
                     }
-                }
-                .onChange(of: viewModel.currentTime) { newTime in
-                    guard viewModel.isPlaying, !userIsDragging else { return }
-                    let tick = Int(newTime * 2)
-                    guard tick != lastAutoScrollTime else { return }
-                    lastAutoScrollTime = tick
-                    withAnimation(.linear(duration: 0.5)) {
-                        proxy.scrollTo("time_\(tick)", anchor: .center)
-                    }
+                )
+                .allowsHitTesting(false)
+                #endif
+            }
+            .clipped()
+            .contentShape(Rectangle())
+            .gesture(scrubGesture)
+            .simultaneousGesture(zoomGesture)
+            .onAppear {
+                scrollOffset = playbackOffset
+            }
+            .onChange(of: viewModel.isPlaying) { playing in
+                if playing {
+                    userIsDragging = false
+                    scrollOffset = playbackOffset
                 }
             }
-
-            playhead
+            .onChange(of: viewModel.currentTime) { _ in
+                guard viewModel.isPlaying, !userIsDragging else { return }
+                scrollOffset = playbackOffset
+            }
+            .onChange(of: zoomScale) { _ in
+                guard viewModel.isPlaying, !userIsDragging else { return }
+                scrollOffset = playbackOffset
+            }
         }
         .coordinateSpace(name: "timeline")
         .background(theme.isDark ? theme.surface : theme.borderLight)
         .padding(.vertical, 4)
+    }
+
+    private var timelineContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            timeRuler
+            videoClipsRow
+            musicWaveformRows
+            voiceoverWaveformRow
+        }
+    }
+
+    private var scrubGesture: some Gesture {
+        DragGesture(minimumDistance: 4)
+            .onChanged { value in
+                guard !activeItemDrag else { return }
+                if !userIsDragging {
+                    userIsDragging = true
+                    dragStartOffset = scrollOffset
+                    viewModel.pauseForScrub()
+                }
+                let nextOffset = clampedTimelineOffset(dragStartOffset - value.translation.width)
+                scrollOffset = nextOffset
+                viewModel.seekToTime(Double(nextOffset / max(1, pixelsPerSecond)))
+            }
+            .onEnded { _ in
+                guard !activeItemDrag else { return }
+                dragStartOffset = scrollOffset
+            }
+    }
+
+    private var zoomGesture: some Gesture {
+        MagnificationGesture()
+            .onChanged { magnification in
+                guard !activeItemDrag else { return }
+                let base = zoomGestureBaseScale ?? zoomScale
+                zoomGestureBaseScale = base
+                setTimelineZoom(base * magnification)
+            }
+            .onEnded { _ in
+                zoomGestureBaseScale = nil
+                dragStartOffset = scrollOffset
+            }
+    }
+
+    private var zoomControls: some View {
+        HStack(spacing: 2) {
+            Button {
+                stepTimelineZoom(multiplier: 0.8)
+            } label: {
+                Image(systemName: "minus.magnifyingglass")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 30, height: 28)
+            }
+            .disabled(zoomScale <= minZoomScale + 0.01)
+
+            Button {
+                stepTimelineZoom(multiplier: 1.25)
+            } label: {
+                Image(systemName: "plus.magnifyingglass")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 30, height: 28)
+            }
+            .disabled(zoomScale >= maxZoomScale - 0.01)
+        }
+        .foregroundColor(theme.text)
+        .background(
+            Capsule()
+                .fill(theme.surfaceElevated.opacity(0.94))
+                .overlay(Capsule().stroke(theme.border, lineWidth: 0.7))
+                .shadow(color: .black.opacity(0.16), radius: 6, y: 3)
+        )
+        #if os(macOS)
+        .buttonStyle(.plain)
+        #endif
+    }
+
+    private var undoHistoryControl: some View {
+        Button {
+            viewModel.undoLastEdit()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 32, height: 28)
+        }
+        .foregroundColor(theme.text)
+        .background(
+            Capsule()
+                .fill(theme.surfaceElevated.opacity(0.94))
+                .overlay(Capsule().stroke(theme.border, lineWidth: 0.7))
+                .shadow(color: .black.opacity(0.16), radius: 6, y: 3)
+        )
+        .disabled(!viewModel.canUndoEdit)
+        .opacity(viewModel.canUndoEdit ? 1 : 0.45)
+        #if os(macOS)
+        .buttonStyle(.plain)
+        #endif
+        .accessibilityLabel("Undo last edit")
     }
 
     // MARK: - Time Ruler
@@ -152,93 +282,294 @@ struct ClipsTimelineView: View {
     // MARK: - Video Clips Row
 
     private var videoClipsRow: some View {
-        HStack(spacing: 2) {
-            ForEach(Array(viewModel.clips.enumerated()), id: \.element.id) { index, clip in
-                FilmstripClip(
-                    clip: clip,
-                    index: index,
-                    isSelected: index == viewModel.activeClipIndex,
-                    thumbHeight: thumbHeight,
-                    clipWidth: clipWidth(for: clip),
-                    onTap: {
-                        if index == viewModel.activeClipIndex {
-                            viewModel.playAllClips()
-                        } else {
+        ZStack(alignment: .topLeading) {
+            if viewModel.clips.isEmpty && viewModel.pendingVideoSlots == 0 {
+                videoTrackPlaceholder
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            } else {
+                ForEach(timelineClips, id: \.clip.id) { item in
+                    let index = item.index
+                    let clip = item.clip
+                    let y = CGFloat(item.lane) * (videoClipBlockHeight + videoLaneSpacing)
+                    let clipW = clipWidth(for: clip)
+                    FilmstripClip(
+                        clip: clip,
+                        index: index,
+                        isSelected: viewModel.isVideoSelected(index),
+                        isTextSelected: viewModel.isTextSelected(index),
+                        thumbHeight: thumbHeight,
+                        attachedTextHeight: attachedTextHeight,
+                        clipWidth: clipW,
+                        onTap: {
                             viewModel.selectClip(at: index)
+                        },
+                        onTextTap: {
+                            viewModel.selectText(at: index)
+                            viewModel.showSubtitlesFromTimeline = true
+                        },
+                        onTrimStartChanged: { delta in
+                            handleTrimDrag(index: index, isStart: true, delta: delta, clip: clip)
+                        },
+                        onTrimEndChanged: { delta in
+                            handleTrimDrag(index: index, isStart: false, delta: delta, clip: clip)
                         }
-                    },
-                    onRemove: viewModel.clips.count > 1 ? { viewModel.removeClip(at: index) } : nil,
-                    onTrimStartChanged: { delta in
-                        handleTrimDrag(index: index, isStart: true, delta: delta, clip: clip)
-                    },
-                    onTrimEndChanged: { delta in
-                        handleTrimDrag(index: index, isStart: false, delta: delta, clip: clip)
+                    )
+                    .id(clip.id)
+                    .offset(x: item.x, y: y)
+                    .scaleEffect(draggedClipIndex == index ? 1.04 : 1.0)
+                    .shadow(color: .black.opacity(draggedClipIndex == index ? 0.28 : 0), radius: draggedClipIndex == index ? 12 : 0, y: draggedClipIndex == index ? 8 : 0)
+                    .zIndex(draggedClipIndex == index ? 5 : 0)
+                    .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.78), value: draggedClipIndex == index)
+                    .animation(.interactiveSpring(response: 0.34, dampingFraction: 0.82), value: item.x)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+                    .onDrag {
+                        activeItemDrag = true
+                        draggedClipIndex = index
+                        return NSItemProvider(object: String(index) as NSString)
                     }
-                )
-                .id(clip.id)
-                .onDrag {
-                    draggedClipIndex = index
-                    return NSItemProvider(object: String(index) as NSString)
-                }
-                .onDrop(of: [.text], delegate: ClipDropDelegate(
-                    targetIndex: index,
-                    draggedIndex: $draggedClipIndex,
-                    viewModel: viewModel
-                ))
-            }
+                    .onDrop(of: [.text], delegate: ClipDropDelegate(
+                        targetIndex: index,
+                        draggedIndex: $draggedClipIndex,
+                        activeItemDrag: $activeItemDrag,
+                        viewModel: viewModel
+                    ))
 
-            // Add clip button at end of timeline
-            Button {
-                viewModel.showAddClipPicker = true
-            } label: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(theme.surfaceElevated)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(theme.border, lineWidth: 1)
+                    if index < viewModel.clips.count - 1 && clip.transitionName != "None" {
+                        TransitionTimelineBadge(
+                            transitionName: clip.transitionName,
+                            isSelected: true
                         )
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(theme.primary)
+                        .offset(x: item.x + clipW - 15, y: y + (thumbHeight / 2) - 15)
+                        .zIndex(8)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
+                    }
                 }
-                .frame(width: 32, height: thumbHeight)
+
+                ForEach(pendingVideoItems, id: \.slot) { item in
+                    let y = CGFloat(item.lane) * (videoClipBlockHeight + videoLaneSpacing)
+                    VStack(spacing: 2) {
+                        PendingTimelineBlock(
+                            title: "",
+                            icon: "film",
+                            color: theme.primary,
+                            height: thumbHeight,
+                            width: item.width
+                        )
+                        PendingTimelineBlock(
+                            title: "Text",
+                            icon: "text.bubble",
+                            color: theme.primary,
+                            height: attachedTextHeight,
+                            width: item.width
+                        )
+                    }
+                    .offset(x: item.x, y: y)
+                    .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
             }
-            #if os(macOS)
-            .buttonStyle(.plain)
-            #endif
         }
-        .frame(height: thumbHeight)
+        .frame(width: timelineContentWidth, height: videoRowsHeight, alignment: .topLeading)
         .padding(.bottom, 6)
+    }
+
+    private var videoTrackPlaceholder: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "film.fill")
+                .font(.system(size: 12, weight: .medium))
+            Text("Video track")
+                .font(.system(size: 11, weight: .semibold))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .foregroundColor(theme.textTertiary)
+        .padding(.horizontal, 12)
+        .frame(width: max(220, timelineContentWidth), height: thumbHeight, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(theme.surfaceElevated.opacity(0.55))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(theme.border.opacity(0.7), lineWidth: 1)
+                )
+        )
     }
 
     // MARK: - Music Waveform Row
 
-    private var musicWaveformRow: some View {
+    private var musicWaveformRows: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let selected = viewModel.selectedMusic {
+                audioWaveformRow(
+                    title: selected.name,
+                    icon: "music.note",
+                    color: theme.foxBlue,
+                    trackId: selected.id,
+                    timelineStart: selected.timelineStart,
+                    timelineEnd: selected.timelineEnd,
+                    isSelected: viewModel.isMusicSelected(selected.id),
+                    onSelect: { viewModel.selectMusicTrack(id: selected.id) },
+                    trailingAction: {
+                        EmptyView()
+                    }
+                )
+                .transition(.move(edge: .leading).combined(with: .opacity))
+
+                ForEach(viewModel.additionalMusicTracks) { track in
+                    audioWaveformRow(
+                        title: track.name,
+                        icon: "waveform",
+                        color: theme.foxBlue,
+                        trackId: track.id,
+                        timelineStart: track.timelineStart,
+                        timelineEnd: track.timelineEnd,
+                        isSelected: viewModel.isMusicSelected(track.id),
+                        onSelect: { viewModel.selectMusicTrack(id: track.id) },
+                        trailingAction: {
+                            EmptyView()
+                        }
+                    )
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+                }
+            } else {
+                EmptyView()
+            }
+        }
+    }
+
+    private func audioWaveformRow<Trailing: View>(
+        title: String,
+        icon: String,
+        color: Color,
+        trackId: String? = nil,
+        timelineStart: Double = 0,
+        timelineEnd: Double? = nil,
+        isSelected: Bool = false,
+        onSelect: (() -> Void)? = nil,
+        onTimingChange: ((Double?, Double?) -> Void)? = nil,
+        @ViewBuilder trailingAction: () -> Trailing
+    ) -> some View {
         let barWidth = max(60, totalDuration * pixelsPerSecond)
+        let clampedStart = max(0, min(timelineStart, totalDuration))
+        let clampedEnd = max(clampedStart + 0.1, min(timelineEnd ?? totalDuration, totalDuration))
+        let blockX = CGFloat(clampedStart) * pixelsPerSecond
+        let blockWidth = max(44, CGFloat(clampedEnd - clampedStart) * pixelsPerSecond)
+        let isMoving = trackId.flatMap { musicMoveBases[$0] } != nil
 
         return HStack(spacing: 0) {
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 4)
-                    .fill(theme.foxBlue.opacity(0.2))
+                    .fill(color.opacity(0.08))
                     .frame(width: barWidth, height: musicRowHeight)
 
-                AudioWaveformView(width: barWidth, height: musicRowHeight, color: theme.foxBlue)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                ZStack(alignment: .leading) {
+                    AudioWaveformView(width: blockWidth, height: musicRowHeight, color: color)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
 
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(theme.foxBlue.opacity(0.5), lineWidth: 1)
-                    .frame(width: barWidth, height: musicRowHeight)
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(isSelected ? color : color.opacity(0.55), lineWidth: isSelected ? 2 : 1)
+                        .frame(width: blockWidth, height: musicRowHeight)
 
-                HStack(spacing: 4) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 10))
-                    Text(viewModel.selectedMusic?.name ?? "Music")
-                        .font(.system(size: 9, weight: .medium))
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Image(systemName: icon)
+                            .font(.system(size: 10))
+                        Text(title)
+                            .font(.system(size: 9, weight: .medium))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(color)
+                    .padding(.horizontal, 8)
+
+                    if let trackId {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .padding(.horizontal, 12)
+                            .gesture(
+                                DragGesture(minimumDistance: 3)
+                                    .onChanged { value in
+                                        activeItemDrag = true
+                                        let base = musicMoveBases[trackId] ?? (clampedStart, clampedEnd)
+                                        musicMoveBases[trackId] = base
+                                        let delta = Double(value.translation.width / pixelsPerSecond)
+                                        let length = max(0.1, base.end - base.start)
+                                        let maxStart = max(0, totalDuration - length)
+                                        let nextStart = max(0, min(base.start + delta, maxStart))
+                                        if let onTimingChange {
+                                            onTimingChange(nextStart, nextStart + length)
+                                        } else {
+                                            viewModel.updateMusicTrackTiming(id: trackId, start: nextStart, end: nextStart + length)
+                                        }
+                                    }
+                                    .onEnded { _ in
+                                        withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.78)) {
+                                            musicMoveBases[trackId] = nil
+                                            activeItemDrag = false
+                                        }
+                                    }
+                            )
+                    }
+
+                    if let trackId {
+                        HStack(spacing: 0) {
+                            TimelineMiniTrimHandle(edge: .leading, color: color)
+                                .gesture(
+                                    DragGesture()
+                                        .onChanged { value in
+                                            activeItemDrag = true
+                                            let base = musicTrimBases[trackId] ?? (clampedStart, clampedEnd)
+                                            musicTrimBases[trackId] = base
+                                            let delta = Double(value.translation.width / pixelsPerSecond)
+                                            if let onTimingChange {
+                                                onTimingChange(base.start + delta, nil)
+                                            } else {
+                                                viewModel.updateMusicTrackTiming(id: trackId, start: base.start + delta)
+                                            }
+                                        }
+                                        .onEnded { _ in
+                                            musicTrimBases[trackId] = nil
+                                            activeItemDrag = false
+                                        }
+                                )
+                            Spacer()
+                            TimelineMiniTrimHandle(edge: .trailing, color: color)
+                                .gesture(
+                                    DragGesture()
+                                        .onChanged { value in
+                                            activeItemDrag = true
+                                            let base = musicTrimBases[trackId] ?? (clampedStart, clampedEnd)
+                                            musicTrimBases[trackId] = base
+                                            let delta = Double(value.translation.width / pixelsPerSecond)
+                                            if let onTimingChange {
+                                                onTimingChange(nil, base.end + delta)
+                                            } else {
+                                                viewModel.updateMusicTrackTiming(id: trackId, end: base.end + delta)
+                                            }
+                                        }
+                                        .onEnded { _ in
+                                            musicTrimBases[trackId] = nil
+                                            activeItemDrag = false
+                                        }
+                                )
+                        }
+                        .frame(width: blockWidth, height: musicRowHeight)
+                    }
+
                 }
-                .foregroundColor(theme.foxBlue)
-                .padding(.horizontal, 8)
+                .frame(width: blockWidth, height: musicRowHeight)
+                .offset(x: blockX)
+                .scaleEffect(isMoving ? 1.035 : 1.0)
+                .shadow(color: .black.opacity(isMoving ? 0.24 : 0), radius: isMoving ? 10 : 0, y: isMoving ? 6 : 0)
+                .zIndex(isMoving ? 4 : 0)
+                .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.8), value: isMoving)
+                .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.86), value: blockX)
+                .onTapGesture {
+                    onSelect?()
+                }
+
+                HStack {
+                    Spacer()
+                    trailingAction()
+                }
+                .padding(.trailing, 8)
             }
             .frame(width: barWidth, height: musicRowHeight)
 
@@ -251,73 +582,186 @@ struct ClipsTimelineView: View {
     // MARK: - Voiceover Waveform Row
 
     private var voiceoverWaveformRow: some View {
-        let barWidth = max(60, totalDuration * pixelsPerSecond)
-
-        return HStack(spacing: 0) {
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(theme.success.opacity(0.2))
-                    .frame(width: barWidth, height: musicRowHeight)
-
-                AudioWaveformView(width: barWidth, height: musicRowHeight, color: theme.success)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(theme.success.opacity(0.5), lineWidth: 1)
-                    .frame(width: barWidth, height: musicRowHeight)
-
-                HStack(spacing: 4) {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 10))
-                    Text("Voiceover")
-                        .font(.system(size: 9, weight: .medium))
-                        .lineLimit(1)
+        if viewModel.voiceoverFileURL != nil {
+            return AnyView(
+                audioWaveformRow(
+                    title: "Voiceover",
+                    icon: "mic.fill",
+                    color: theme.success,
+                    trackId: "voiceover",
+                    timelineStart: viewModel.voiceoverTimelineStart,
+                    timelineEnd: viewModel.voiceoverTimelineEnd,
+                    isSelected: viewModel.isVoiceoverSelected,
+                    onSelect: { viewModel.selectVoiceover() },
+                    onTimingChange: { start, end in
+                        viewModel.updateVoiceoverTiming(start: start, end: end)
+                    }
+                ) {
+                    EmptyView()
                 }
-                .foregroundColor(theme.success)
-                .padding(.horizontal, 8)
-            }
-            .frame(width: barWidth, height: musicRowHeight)
-
-            Spacer(minLength: 0)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            )
+        } else if viewModel.pendingVoiceoverProcessing {
+            return AnyView(
+                PendingTimelineBlock(
+                    title: "Voice loading",
+                    icon: "mic.fill",
+                    color: theme.success,
+                    height: musicRowHeight,
+                    width: max(180, min(timelineContentWidth, totalDuration * pixelsPerSecond))
+                )
+                .padding(.bottom, 6)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            )
+        } else {
+            return AnyView(EmptyView())
         }
-        .frame(height: musicRowHeight)
-        .padding(.bottom, 6)
     }
 
     // MARK: - Text Track Row
 
     private var textTrackRow: some View {
         let hasText = viewModel.clips.contains { ($0.text ?? "").isEmpty == false }
-        guard hasText else { return AnyView(EmptyView()) }
+        if !hasText && viewModel.pendingTextSlots == 0 {
+            return AnyView(EmptyView())
+        }
 
         return AnyView(
-            HStack(spacing: 2) {
-                ForEach(Array(viewModel.clips.enumerated()), id: \.element.id) { index, clip in
+            ZStack(alignment: .leading) {
+                ForEach(timelineClips, id: \.clip.id) { item in
+                    let clip = item.clip
                     let w = clipWidth(for: clip)
                     let txt = clip.text ?? ""
                     let hasContent = !txt.isEmpty
+                    let textStart = max(0, min(clip.textStart, 100))
+                    let textEnd = max(textStart + 1, min(clip.textEnd, 100))
+                    let textX = w * CGFloat(textStart / 100)
+                    let textWidth = max(36, w * CGFloat((textEnd - textStart) / 100))
+                    let textIsMoving = textMoveBases[item.index] != nil
 
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(hasContent ? theme.primary.opacity(0.2) : Color.clear)
-                        .frame(width: w, height: textRowHeight)
-                        .overlay(
-                            Group {
-                                if hasContent {
-                                    Text(txt)
-                                        .font(.system(size: 8, weight: .medium))
-                                        .foregroundColor(theme.primary)
-                                        .lineLimit(1)
-                                        .padding(.horizontal, 6)
-                                }
-                            }
-                        )
-                        .overlay(
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(theme.primary.opacity(0.06))
+                            .frame(width: w, height: textRowHeight)
+
+                        ZStack(alignment: .leading) {
                             RoundedRectangle(cornerRadius: 4)
-                                .stroke(hasContent ? theme.primary.opacity(0.4) : Color.clear, lineWidth: 0.5)
+                                .fill(hasContent ? theme.primary.opacity(0.2) : theme.primary.opacity(0.08))
+                                .frame(width: textWidth, height: textRowHeight)
+                                .overlay(
+                                    Group {
+                                        if hasContent {
+                                            Text("Text")
+                                                .font(.system(size: 8, weight: .medium))
+                                                .foregroundColor(theme.primary)
+                                                .lineLimit(1)
+                                                .padding(.horizontal, 10)
+                                        } else {
+                                            Image(systemName: "text.bubble")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(theme.primary.opacity(0.7))
+                                        }
+                                    }
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(viewModel.isTextSelected(item.index) ? theme.primary : theme.primary.opacity(hasContent ? 0.4 : 0.25), lineWidth: viewModel.isTextSelected(item.index) ? 2 : 0.5)
+                                )
+
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .padding(.horizontal, 12)
+                                .gesture(
+                                    DragGesture(minimumDistance: 3)
+                                        .onChanged { value in
+                                            activeItemDrag = true
+                                            viewModel.selectText(at: item.index)
+                                            let base = textMoveBases[item.index] ?? (textStart, textEnd)
+                                            textMoveBases[item.index] = base
+                                            let delta = Double(value.translation.width / max(1, w)) * 100
+                                            let length = max(1, base.end - base.start)
+                                            let maxStart = max(0, 100 - length)
+                                            let nextStart = max(0, min(base.start + delta, maxStart))
+                                            viewModel.updateTextTiming(for: item.index, start: nextStart, end: nextStart + length)
+                                        }
+                                        .onEnded { _ in
+                                            withAnimation(.interactiveSpring(response: 0.3, dampingFraction: 0.78)) {
+                                                textMoveBases[item.index] = nil
+                                                activeItemDrag = false
+                                            }
+                                        }
+                                )
+
+                            HStack(spacing: 0) {
+                                TimelineMiniTrimHandle(edge: .leading, color: theme.primary)
+                                    .gesture(
+                                        DragGesture()
+                                            .onChanged { value in
+                                                activeItemDrag = true
+                                                let base = textTrimBases[item.index] ?? (textStart, textEnd)
+                                                textTrimBases[item.index] = base
+                                                let delta = Double(value.translation.width / max(1, w)) * 100
+                                                viewModel.updateTextTiming(for: item.index, start: base.start + delta)
+                                            }
+                                            .onEnded { _ in
+                                                textTrimBases[item.index] = nil
+                                                activeItemDrag = false
+                                            }
+                                    )
+                                Spacer()
+                                TimelineMiniTrimHandle(edge: .trailing, color: theme.primary)
+                                    .gesture(
+                                        DragGesture()
+                                            .onChanged { value in
+                                                activeItemDrag = true
+                                                let base = textTrimBases[item.index] ?? (textStart, textEnd)
+                                                textTrimBases[item.index] = base
+                                                let delta = Double(value.translation.width / max(1, w)) * 100
+                                                viewModel.updateTextTiming(for: item.index, end: base.end + delta)
+                                            }
+                                            .onEnded { _ in
+                                                textTrimBases[item.index] = nil
+                                                activeItemDrag = false
+                                            }
+                                    )
+                            }
+                            .frame(width: textWidth, height: textRowHeight)
+                        }
+                        .offset(x: textX)
+                        .scaleEffect(textIsMoving ? 1.04 : 1.0)
+                        .shadow(color: .black.opacity(textIsMoving ? 0.24 : 0), radius: textIsMoving ? 9 : 0, y: textIsMoving ? 5 : 0)
+                        .zIndex(textIsMoving ? 4 : 0)
+                        .animation(.interactiveSpring(response: 0.28, dampingFraction: 0.8), value: textIsMoving)
+                        .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.86), value: textX)
+                        .onTapGesture {
+                            viewModel.selectText(at: item.index)
+                            viewModel.showSubtitlesFromTimeline = true
+                        }
+                    }
+                    .frame(width: w, height: textRowHeight, alignment: .leading)
+                    .offset(x: item.x)
+                }
+
+                if viewModel.pendingTextSlots > 0 {
+                    let startX = timelineClips.reduce(CGFloat(0)) { partial, item in
+                        max(partial, item.x + clipWidth(for: item.clip) + 2)
+                    }
+                    let pendingWidth = max(64, CGFloat(1.3) * pixelsPerSecond)
+                    ForEach(0..<min(1, viewModel.pendingTextSlots), id: \.self) { slot in
+                        PendingTimelineBlock(
+                            title: slot == 0 ? "Text" : "Caption",
+                            icon: "text.bubble",
+                            color: theme.primary,
+                            height: textRowHeight,
+                            width: pendingWidth
                         )
+                        .offset(x: startX + CGFloat(slot) * (pendingWidth + 2))
+                        .transition(.scale(scale: 0.94).combined(with: .opacity))
+                    }
                 }
             }
-            .frame(height: textRowHeight)
+            .frame(width: timelineContentWidth, height: textRowHeight, alignment: .leading)
+            .transition(.move(edge: .leading).combined(with: .opacity))
         )
     }
 
@@ -339,10 +783,75 @@ struct ClipsTimelineView: View {
 
     // MARK: - Helpers
 
+    private var currentTimelineTime: Double {
+        if isReelTimeline {
+            return max(0, min(viewModel.currentTime, totalDuration))
+        }
+
+        guard viewModel.clips.indices.contains(viewModel.activeClipIndex) else {
+            return max(0, min(viewModel.currentTime, totalDuration))
+        }
+
+        let start = viewModel.clips.prefix(viewModel.activeClipIndex).reduce(0) { $0 + timelineDuration(for: $1) }
+        return max(0, min(start + viewModel.currentTime, totalDuration))
+    }
+
+    private var isReelTimeline: Bool {
+        viewModel.clips.count > 1 && viewModel.clips.contains { $0.beatDuration != nil }
+    }
+
+    private func clampedTimelineOffset(_ offset: CGFloat) -> CGFloat {
+        max(0, min(offset, max(0, timelineContentWidth)))
+    }
+
+    private func stepTimelineZoom(multiplier: CGFloat) {
+        setTimelineZoom(zoomScale * multiplier)
+    }
+
+    private func setTimelineZoom(_ scale: CGFloat) {
+        let previousPixelsPerSecond = max(1, pixelsPerSecond)
+        let focusedTime = userIsDragging
+            ? Double(scrollOffset / previousPixelsPerSecond)
+            : currentTimelineTime
+        let nextScale = max(minZoomScale, min(maxZoomScale, scale))
+        zoomScale = nextScale
+        let nextOffset = CGFloat(max(0, min(focusedTime, totalDuration))) * (basePixelsPerSecond * nextScale)
+        scrollOffset = clampedTimelineOffset(nextOffset)
+        dragStartOffset = scrollOffset
+    }
+
+    #if os(macOS)
+    private func handleMacTrackpadScroll(deltaX: CGFloat, deltaY: CGFloat) {
+        guard !activeItemDrag else { return }
+        let dominantDelta = abs(deltaX) >= abs(deltaY) ? deltaX : deltaY
+        guard abs(dominantDelta) > 0.1 else { return }
+        if !userIsDragging {
+            userIsDragging = true
+            dragStartOffset = scrollOffset
+            viewModel.pauseForScrub()
+        }
+        let nextOffset = clampedTimelineOffset(scrollOffset + dominantDelta)
+        scrollOffset = nextOffset
+        dragStartOffset = nextOffset
+        viewModel.seekToTime(Double(nextOffset / max(1, pixelsPerSecond)))
+    }
+
+    private func handleMacTrackpadMagnify(_ magnification: CGFloat) {
+        guard !activeItemDrag else { return }
+        guard abs(magnification) > 0.001 else { return }
+        let multiplier = max(0.75, min(1.35, 1 + magnification))
+        setTimelineZoom(zoomScale * multiplier)
+    }
+    #endif
+
     private func clipWidth(for clip: Clip) -> CGFloat {
-        let dur = clip.beatDuration ?? clip.sourceDuration ?? 3.0
-        let trimmedDur = dur * (clip.trimEnd - clip.trimStart) / 100.0
+        let trimmedDur = timelineDuration(for: clip)
         return max(minClipWidth, trimmedDur * pixelsPerSecond)
+    }
+
+    private func timelineDuration(for clip: Clip) -> Double {
+        let dur = clip.beatDuration ?? clip.sourceDuration ?? 3.0
+        return dur * (clip.trimEnd - clip.trimStart) / 100.0
     }
 
     private func handleTrimDrag(index: Int, isStart: Bool, delta: CGFloat, clip: Clip) {
@@ -365,9 +874,94 @@ struct ClipsTimelineView: View {
         if m > 0 { return String(format: "%02d:%02d", m, s) }
         return String(format: "00:%02d.%d", s, ms)
     }
+
 }
 
 // MARK: - Audio Waveform Visualization
+
+struct PendingTimelineBlock: View {
+    let title: String
+    let icon: String
+    let color: Color
+    let height: CGFloat
+    let width: CGFloat
+
+    @Environment(\.theme) var theme
+    @State private var isPulsing = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: max(9, height * 0.28), weight: .semibold))
+            if !title.isEmpty {
+                Text(title)
+                    .font(.system(size: max(8, min(11, height * 0.28)), weight: .semibold))
+                    .lineLimit(1)
+            }
+            ProgressView()
+                .scaleEffect(0.55)
+                .tint(color)
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 8)
+        .frame(width: width, height: height, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(color.opacity(isPulsing ? 0.2 : 0.09))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                        .foregroundColor(color.opacity(isPulsing ? 0.75 : 0.42))
+                )
+        )
+        .scaleEffect(isPulsing ? 1.015 : 1.0)
+        .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: isPulsing)
+        .onAppear { isPulsing = true }
+    }
+}
+
+struct TransitionTimelineBadge: View {
+    let transitionName: String
+    let isSelected: Bool
+    @Environment(\.theme) var theme
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+                .font(.system(size: 9, weight: .bold))
+            if isSelected {
+                Text(shortName)
+                    .font(.system(size: 8, weight: .bold))
+                    .lineLimit(1)
+            }
+        }
+        .foregroundColor(isSelected ? .white : theme.primary)
+        .padding(.horizontal, isSelected ? 6 : 0)
+        .frame(minWidth: 30, minHeight: 30)
+        .background(
+            Capsule()
+                .fill(isSelected ? theme.primary : theme.surfaceElevated)
+                .overlay(Capsule().stroke(theme.primary.opacity(isSelected ? 0.95 : 0.55), lineWidth: 1))
+        )
+        .shadow(color: .black.opacity(0.16), radius: 4, y: 2)
+    }
+
+    private var shortName: String {
+        switch transitionName {
+        case "Fade": return "Fade"
+        case "Dip": return "Dip"
+        default: return ""
+        }
+    }
+
+    private var icon: String {
+        switch transitionName {
+        case "Fade": return "circle.lefthalf.filled"
+        case "Dip": return "moonphase.new.moon"
+        default: return "plus"
+        }
+    }
+}
 
 struct AudioWaveformView: View {
     let width: CGFloat
@@ -419,38 +1013,34 @@ struct FilmstripClip: View {
     let clip: Clip
     let index: Int
     let isSelected: Bool
+    let isTextSelected: Bool
     let thumbHeight: CGFloat
+    let attachedTextHeight: CGFloat
     let clipWidth: CGFloat
     let onTap: () -> Void
-    let onRemove: (() -> Void)?
+    let onTextTap: () -> Void
     let onTrimStartChanged: (CGFloat) -> Void
     let onTrimEndChanged: (CGFloat) -> Void
 
     @Environment(\.theme) var theme
     @State private var thumbnailFrames: [PlatformImage] = []
     @State private var isLoadingThumbs = true
-    @State private var showRemoveButton = false
 
     private let handleWidth: CGFloat = 14
 
     var body: some View {
         ZStack(alignment: .center) {
-            filmstripBody
-                .onTapGesture {
-                    if showRemoveButton {
-                        showRemoveButton = false
-                    } else {
+            VStack(spacing: 2) {
+                filmstripBody
+                    .onTapGesture {
                         onTap()
                     }
-                }
-                .onLongPressGesture(minimumDuration: 0.5) {
-                    if onRemove != nil {
-                        showRemoveButton = true
-                    }
-                }
+                attachedTextStrip
+            }
 
             if isSelected {
                 trimHandles
+                    .offset(y: -(attachedTextHeight + 2) / 2)
             }
         }
         .frame(width: clipWidth + (isSelected ? handleWidth * 2 : 0))
@@ -482,34 +1072,89 @@ struct FilmstripClip: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                 }
             }
+            .timelineClipFilter(clip.filterName)
+            .overlay(filterTintOverlay(for: clip.filterName).clipShape(RoundedRectangle(cornerRadius: 4)))
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(isSelected ? theme.text : theme.border, lineWidth: isSelected ? 2 : 0.5)
             )
 
-            if showRemoveButton, let onRemove {
-                Color.black.opacity(0.5)
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .onTapGesture { showRemoveButton = false }
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        Button {
-                            showRemoveButton = false
-                            onRemove()
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 22))
-                                .foregroundStyle(.white, Color.red)
-                        }
-                        .offset(x: 6, y: -6)
-                    }
-                    Spacer()
+            if clip.videoLayoutMode == "PiP" {
+                HStack(spacing: 4) {
+                    Image(systemName: "pip.fill")
+                        .font(.system(size: 8, weight: .bold))
+                    Text("PiP")
+                        .font(.system(size: 8, weight: .bold))
                 }
+                .foregroundColor(.white)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.black.opacity(0.58)))
+                .frame(width: clipWidth - 6, height: thumbHeight - 6, alignment: .topTrailing)
             }
+
         }
         .frame(width: clipWidth, height: thumbHeight)
+    }
+
+    @ViewBuilder
+    private func filterTintOverlay(for name: String) -> some View {
+        switch name {
+        case "Warm":
+            Color.orange.opacity(0.18).blendMode(.softLight)
+        case "Cool":
+            Color.cyan.opacity(0.18).blendMode(.softLight)
+        case "Punch":
+            Color.black.opacity(0.12).blendMode(.overlay)
+            Color.orange.opacity(0.08).blendMode(.colorDodge)
+        case "Mono":
+            Color.gray.opacity(0.26).blendMode(.saturation)
+        case "Fade":
+            Color.white.opacity(0.16).blendMode(.screen)
+            Color.orange.opacity(0.08).blendMode(.softLight)
+        default:
+            EmptyView()
+        }
+    }
+
+    private var attachedTextStrip: some View {
+        let text = (clip.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasText = !text.isEmpty
+        let textStart = max(0, min(clip.textStart, 100))
+        let textEnd = max(textStart + 1, min(clip.textEnd, 100))
+        let x = clipWidth * CGFloat(textStart / 100)
+        let width = max(34, clipWidth * CGFloat((textEnd - textStart) / 100))
+
+        return ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 4)
+                .fill(theme.primary.opacity(isTextSelected ? 0.12 : 0.06))
+                .frame(width: clipWidth, height: attachedTextHeight)
+
+            HStack(spacing: 4) {
+                Image(systemName: hasText ? "text.bubble.fill" : "plus")
+                    .font(.system(size: 8, weight: .bold))
+                Text("Text")
+                    .font(.system(size: 8, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .foregroundColor(theme.primary)
+            .padding(.horizontal, 7)
+            .frame(width: width, height: attachedTextHeight, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(hasText ? theme.primary.opacity(0.2) : theme.primary.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(isTextSelected ? theme.primary : theme.primary.opacity(hasText ? 0.42 : 0.22), lineWidth: isTextSelected ? 1.5 : 0.7)
+            )
+            .offset(x: x)
+        }
+        .frame(width: clipWidth, height: attachedTextHeight, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTextTap()
+        }
     }
 
     private var trimHandles: some View {
@@ -560,16 +1205,18 @@ struct FilmstripClip: View {
 struct ClipDropDelegate: DropDelegate {
     let targetIndex: Int
     @Binding var draggedIndex: Int?
+    @Binding var activeItemDrag: Bool
     let viewModel: VideoEditorViewModel
 
     func performDrop(info: DropInfo) -> Bool {
         draggedIndex = nil
+        activeItemDrag = false
         return true
     }
 
     func dropEntered(info: DropInfo) {
         guard let from = draggedIndex, from != targetIndex else { return }
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAnimation(.interactiveSpring(response: 0.32, dampingFraction: 0.78)) {
             viewModel.reorderClips(from: from, to: targetIndex)
         }
         draggedIndex = targetIndex
@@ -601,6 +1248,113 @@ struct TrimHandle: View {
                     .frame(width: 3, height: 18)
             )
             .contentShape(Rectangle().inset(by: -8))
+    }
+}
+
+struct TimelineMiniTrimHandle: View {
+    let edge: HorizontalEdge
+    let color: Color
+    @Environment(\.theme) var theme
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(color)
+            .frame(width: 10, height: 26)
+            .overlay(
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(theme.isDark ? Color.black.opacity(0.4) : Color.white.opacity(0.65))
+                    .frame(width: 2, height: 10)
+            )
+            .contentShape(Rectangle().inset(by: -8))
+    }
+}
+
+#if os(macOS)
+private struct MacTimelineTrackpadBridge: NSViewRepresentable {
+    let onScroll: (CGFloat, CGFloat) -> Void
+    let onMagnify: (CGFloat) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScroll: onScroll, onMagnify: onMagnify)
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        view.postsFrameChangedNotifications = true
+        context.coordinator.attach(to: view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.onScroll = onScroll
+        context.coordinator.onMagnify = onMagnify
+        context.coordinator.attach(to: nsView)
+    }
+
+    final class Coordinator {
+        var onScroll: (CGFloat, CGFloat) -> Void
+        var onMagnify: (CGFloat) -> Void
+        private weak var view: NSView?
+        private var scrollMonitor: Any?
+        private var magnifyMonitor: Any?
+
+        init(onScroll: @escaping (CGFloat, CGFloat) -> Void, onMagnify: @escaping (CGFloat) -> Void) {
+            self.onScroll = onScroll
+            self.onMagnify = onMagnify
+        }
+
+        deinit {
+            if let scrollMonitor {
+                NSEvent.removeMonitor(scrollMonitor)
+            }
+            if let magnifyMonitor {
+                NSEvent.removeMonitor(magnifyMonitor)
+            }
+        }
+
+        func attach(to view: NSView) {
+            self.view = view
+            guard scrollMonitor == nil else { return }
+
+            scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self, self.eventIsInsideTimeline(event) else { return event }
+                self.onScroll(CGFloat(event.scrollingDeltaX), CGFloat(event.scrollingDeltaY))
+                return nil
+            }
+
+            magnifyMonitor = NSEvent.addLocalMonitorForEvents(matching: .magnify) { [weak self] event in
+                guard let self, self.eventIsInsideTimeline(event) else { return event }
+                self.onMagnify(CGFloat(event.magnification))
+                return nil
+            }
+        }
+
+        private func eventIsInsideTimeline(_ event: NSEvent) -> Bool {
+            guard let view, let window = view.window, event.window === window else { return false }
+            let pointInView = view.convert(event.locationInWindow, from: nil)
+            return view.bounds.contains(pointInView)
+        }
+    }
+}
+#endif
+
+private extension View {
+    @ViewBuilder
+    func timelineClipFilter(_ name: String) -> some View {
+        switch name {
+        case "Warm":
+            self.saturation(1.45).contrast(1.14).brightness(0.06).colorMultiply(Color(red: 1.0, green: 0.82, blue: 0.62))
+        case "Cool":
+            self.saturation(0.82).contrast(1.2).brightness(-0.03).colorMultiply(Color(red: 0.68, green: 0.86, blue: 1.0))
+        case "Punch":
+            self.saturation(1.75).contrast(1.38).brightness(0.02)
+        case "Mono":
+            self.saturation(0).contrast(1.35).brightness(0.02)
+        case "Fade":
+            self.saturation(0.55).contrast(0.78).brightness(0.12).colorMultiply(Color(red: 1.0, green: 0.94, blue: 0.86))
+        default:
+            self
+        }
     }
 }
 

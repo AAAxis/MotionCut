@@ -1,7 +1,8 @@
-バージョン3.1の新機能：
+What's New in 3.3:
 
-• カタログ — コミュニティが作成した動画を閲覧。タップして再生、プロンプトを編集して自分だけの作品に。
-• ボイスオーバー録音 — エディター内で直接音声を録音。タイムラインに波形として表示。
-• タイムラインスクラブ — タイムラインをスライドしてフレームごとにシーク。
-• クレジット修正 — アプリとWebダッシュボード間でクレジット残高が同期されるように。
-• バグ修正とパフォーマンス改善。
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

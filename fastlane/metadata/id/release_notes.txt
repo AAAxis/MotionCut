@@ -1,7 +1,8 @@
-Yang Baru di 3.1:
+What's New in 3.3:
 
-• Katalog — Jelajahi video yang dibuat oleh komunitas. Ketuk untuk memutar, edit prompt mana pun dan jadikan milikmu.
-• Rekaman Sulih Suara — Rekam suaramu langsung di editor. Lihat sebagai gelombang suara di timeline.
-• Geser Timeline — Geser untuk mencari frame demi frame.
-• Perbaikan Kredit — Saldo kreditmu sekarang tetap sinkron antara aplikasi dan dasbor web.
-• Perbaikan bug dan peningkatan performa.
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

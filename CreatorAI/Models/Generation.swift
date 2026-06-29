@@ -16,7 +16,7 @@ struct Generation: Identifiable, Codable, Equatable {
 
     /// Returns a local file URL for playback/thumbnail.
     /// Resolves saved_videos paths relative to Documents at runtime (container UUID can change between launches).
-    /// Falls back to resultVideoUrl for remote (Supabase) URLs.
+    /// Falls back to resultVideoUrl for remote Firebase Storage URLs.
     var videoFileURL: URL? {
         let savedDir = FileStorageService.shared.savedVideosDirectory
 
@@ -48,7 +48,7 @@ struct Generation: Identifiable, Codable, Equatable {
             }
         }
 
-        // 4. Return remote URL (Supabase Storage) for streaming/download
+        // 4. Return remote URL for streaming/download.
         if let remote = resultVideoUrl, remote.hasPrefix("http") {
             return URL(string: remote)
         }
@@ -64,6 +64,71 @@ struct Generation: Identifiable, Codable, Equatable {
         if let takes = takesJson, !takes.isEmpty { return false }
         return resultVideoUrl?.hasPrefix("http") == true
     }
+
+    /// Returns takes JSON only when at least one clip source can be used on this device.
+    /// This avoids opening iOS-sandbox clip paths on macOS when a rendered remote video exists.
+    var usableTakesJson: String? {
+        guard let takesJson, !takesJson.isEmpty,
+              let data = takesJson.data(using: .utf8),
+              let clips = try? JSONDecoder().decode([Clip].self, from: data),
+              !clips.isEmpty else { return nil }
+
+        let savedDir = FileStorageService.shared.savedVideosDirectory
+        let cacheDir = FileStorageService.shared.clipCacheDirectory
+        let hasPlayableClip = clips.contains { clip in
+            let source = clip.localUri ?? clip.uri
+            if source.hasPrefix("http://") || source.hasPrefix("https://") { return true }
+            let path = source.replacingOccurrences(of: "file://", with: "")
+            if FileManager.default.fileExists(atPath: path) { return true }
+            let filename = (path as NSString).lastPathComponent
+            if filename.isEmpty { return false }
+            return FileManager.default.fileExists(atPath: savedDir.appendingPathComponent(filename).path)
+                || FileManager.default.fileExists(atPath: cacheDir.appendingPathComponent(filename).path)
+        }
+
+        return hasPlayableClip ? takesJson : nil
+    }
+
+    var displayName: String {
+        let cleanName = videoName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanName.isEmpty && !["Editor", "Video", "Imported Video"].contains(cleanName) {
+            return cleanName
+        }
+        if let title = titleFromTakesJson() {
+            return title
+        }
+        return cleanName.isEmpty ? "Video" : cleanName
+    }
+
+    private func titleFromTakesJson() -> String? {
+        guard let takesJson,
+              let data = takesJson.data(using: .utf8),
+              let takes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return nil }
+
+        for key in ["prompt", "projectTitle", "text", "name"] {
+            if let value = takes.compactMap({ $0[key] as? String }).first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                return Self.shortDisplayTitle(value)
+            }
+        }
+        return nil
+    }
+
+    private static func shortDisplayTitle(_ value: String) -> String {
+        let collapsed = value
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\t", with: " ")
+            .split(separator: " ")
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !collapsed.isEmpty else { return "Video" }
+        if collapsed.count <= 42 { return collapsed }
+        let prefix = collapsed.prefix(42)
+        if let lastSpace = prefix.lastIndex(of: " ") {
+            return String(prefix[..<lastSpace])
+        }
+        return String(prefix)
+    }
+
     /// Resolves musicFile path, handling stale container UUIDs.
     var resolvedMusicFile: String? {
         guard let raw = musicFile, !raw.isEmpty else { return nil }
@@ -84,6 +149,7 @@ struct Generation: Identifiable, Codable, Equatable {
     var musicVolume: Double?
     var faceImageUrl: String?
     var thumbnailPath: String?
+    var errorMessage: String?
     /// Original reel takes JSON so Edit can restore full structure (clips, text, beats).
     var takesJson: String?
 
@@ -101,6 +167,7 @@ struct Generation: Identifiable, Codable, Equatable {
         musicVolume: Double? = nil,
         faceImageUrl: String? = nil,
         thumbnailPath: String? = nil,
+        errorMessage: String? = nil,
         takesJson: String? = nil
     ) {
         self.id = id
@@ -116,6 +183,7 @@ struct Generation: Identifiable, Codable, Equatable {
         self.musicVolume = musicVolume
         self.faceImageUrl = faceImageUrl
         self.thumbnailPath = thumbnailPath
+        self.errorMessage = errorMessage
         self.takesJson = takesJson
     }
 }

@@ -23,7 +23,7 @@ struct CompressTabView: View {
                 HStack(spacing: 10) {
                     ForEach(aspectRatios, id: \.self) { ratio in
                         Button {
-                            viewModel.aspectRatio = ratio
+                            viewModel.setAspectRatio(ratio)
                         } label: {
                             VStack(spacing: 6) {
                                 aspectRatioIcon(ratio)

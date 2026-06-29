@@ -7,6 +7,7 @@ struct LibraryView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @StateObject private var viewModel = LibraryViewModel()
+    var onProfileTap: (() -> Void)?
     @State private var showVideoPicker = false
     #if os(iOS)
     @State private var selectedVideoItem: PhotosPickerItem?
@@ -21,23 +22,18 @@ struct LibraryView: View {
                     .font(.system(size: 29, weight: .semibold))
                     .foregroundColor(theme.text)
                 Spacer()
-
-                // Import from gallery
                 Button {
-                    showVideoPicker = true
+                    onProfileTap?()
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Import")
-                            .font(.system(size: 14, weight: .semibold))
-                    }
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(theme.primary)
-                    .clipShape(Capsule())
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(theme.primary)
+                        .frame(width: 44, height: 44)
+                        .background(theme.surface.opacity(0.85))
+                        .clipShape(Circle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Profile and settings")
             }
             .padding(.horizontal, 26)
             .padding(.bottom, 16)
@@ -77,7 +73,12 @@ struct LibraryView: View {
                                     }
                                 }
                             },
-                            onShare: { viewModel.shareVideo(gen) }
+                            onShare: {
+                                Task { await viewModel.shareVideo(gen) }
+                            },
+                            onDelete: {
+                                Task { await viewModel.deleteGeneration(gen) }
+                            }
                         )
                         .listRowBackground(theme.background)
                         .listRowInsets(EdgeInsets(top: 0, leading: 26, bottom: 0, trailing: 26))
@@ -111,6 +112,9 @@ struct LibraryView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchToLibraryTab)) { _ in
             Task { await viewModel.loadGenerations() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .startVideoImport)) { _ in
+            showVideoPicker = true
         }
         #if os(iOS)
         .photosPicker(isPresented: $showVideoPicker, selection: $selectedVideoItem, matching: .videos)
@@ -170,7 +174,7 @@ struct LibraryView: View {
         }
 
         // If has takesJson (reel with clips), open directly
-        if let takesJson = generation.takesJson, !takesJson.isEmpty {
+        if let takesJson = generation.usableTakesJson, !takesJson.isEmpty {
             navigateToEditor(generation: generation, localVideoPath: nil)
             return
         }
@@ -204,11 +208,11 @@ struct LibraryView: View {
         let userId = generation.userId ?? "demo-user"
         let params: Route.VideoEditorParams
 
-        if let takesJson = generation.takesJson, !takesJson.isEmpty {
+        if let takesJson = generation.usableTakesJson, !takesJson.isEmpty {
             params = Route.VideoEditorParams(
                 generationId: generation.id,
                 videoUri: nil,
-                videoName: generation.videoName,
+                videoName: generation.displayName,
                 takesJson: takesJson,
                 musicUrl: generation.resolvedMusicFile,
                 userId: userId
@@ -218,7 +222,7 @@ struct LibraryView: View {
             params = Route.VideoEditorParams(
                 generationId: generation.id,
                 videoUri: path,
-                videoName: generation.videoName,
+                videoName: generation.displayName,
                 takesJson: nil,
                 musicUrl: nil,
                 userId: userId
@@ -236,6 +240,7 @@ struct GenerationListItem: View {
     var isDownloading: Bool = false
     let onTap: () -> Void
     let onShare: () -> Void
+    let onDelete: () -> Void
     @Environment(\.theme) var theme
 
     var body: some View {
@@ -261,7 +266,7 @@ struct GenerationListItem: View {
 
                 // Name + date
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(generation.videoName)
+                    Text(generation.displayName)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(theme.text)
                         .lineLimit(1)
@@ -291,6 +296,15 @@ struct GenerationListItem: View {
             } else if generation.isCloudOnly {
                 Image(systemName: "icloud.and.arrow.down")
                     .foregroundColor(theme.primary)
+            } else if generation.status == .failed {
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(theme.error)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             } else {
                 statusBadge
             }
@@ -305,7 +319,8 @@ struct GenerationListItem: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(theme.success)
         case .processing:
-            ProgressView().scaleEffect(0.8)
+            Image(systemName: "film.stack")
+                .foregroundColor(theme.textSecondary)
         case .failed:
             Image(systemName: "xmark.circle.fill")
                 .foregroundColor(theme.error)

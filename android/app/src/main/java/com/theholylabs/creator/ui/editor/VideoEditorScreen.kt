@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.theholylabs.creator.models.PRESET_AI_MODELS
 import com.theholylabs.creator.viewmodels.VideoEditorViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -415,43 +416,23 @@ fun VideoEditorScreen(
     val aiStatus by viewModel.aiStatus.collectAsState()
 
     if (showAiPrompt) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { viewModel.hideAiPrompt() },
-            title = { Text("Generate AI Clip") },
-            text = {
-                Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
-                    Text("Describe the video clip you want AI to generate", color = Color.Gray, fontSize = 13.sp)
-                    androidx.compose.material3.OutlinedTextField(
-                        value = aiPrompt,
-                        onValueChange = { viewModel.setAiPrompt(it) },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("e.g. A person using a phone in a coffee shop, cinematic lighting") },
-                        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF9C27B0),
-                            cursorColor = Color(0xFF9C27B0),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        minLines = 2
-                    )
-                }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(
-                    onClick = { viewModel.generateAiClip() },
-                    enabled = aiPrompt.isNotBlank()
-                ) {
-                    Text("Generate", color = Color(0xFF9C27B0))
-                }
-            },
-            dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { viewModel.hideAiPrompt() }) {
-                    Text("Cancel")
-                }
-            },
-            containerColor = Color(0xFF1C1C1E),
-            titleContentColor = Color.White,
-            textContentColor = Color.White
+        var selectedModelId by remember(showAiPrompt) { mutableStateOf(PRESET_AI_MODELS.firstOrNull()?.id.orEmpty()) }
+        var voiceoverMode by remember(showAiPrompt) { mutableStateOf("none") }
+        var language by remember(showAiPrompt) { mutableStateOf("en") }
+
+        AiClipDialog(
+            prompt = aiPrompt,
+            selectedModelId = selectedModelId,
+            voiceoverMode = voiceoverMode,
+            language = language,
+            onPromptChange = viewModel::setAiPrompt,
+            onModelSelect = { selectedModelId = it },
+            onVoiceoverModeChange = { voiceoverMode = it },
+            onLanguageChange = { language = it },
+            onDismiss = { viewModel.hideAiPrompt() },
+            onGenerate = {
+                viewModel.generateAiAd(selectedModelId, "ai", "standard", voiceoverMode, language)
+            }
         )
     }
 
@@ -481,6 +462,162 @@ fun VideoEditorScreen(
     } // Box
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AiClipDialog(
+    prompt: String,
+    selectedModelId: String,
+    voiceoverMode: String,
+    language: String,
+    onPromptChange: (String) -> Unit,
+    onModelSelect: (String) -> Unit,
+    onVoiceoverModeChange: (String) -> Unit,
+    onLanguageChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onGenerate: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = Color(0xFF1C1C1E),
+        contentColor = Color.White,
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(top = 10.dp, bottom = 6.dp)
+                    .size(width = 42.dp, height = 4.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color.White.copy(alpha = 0.28f))
+            )
+        }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .imePadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Create Ad", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                OutlinedTextField(
+                    value = prompt,
+                    onValueChange = onPromptChange,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Describe the ad you want to create") },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Color(0xFF9C27B0),
+                        cursorColor = Color(0xFF9C27B0),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    minLines = 3
+                )
+
+                Text("Model", color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                PRESET_AI_MODELS.forEach { model ->
+                    FilterChip(
+                        selected = model.id == selectedModelId,
+                        onClick = { onModelSelect(model.id) },
+                        label = {
+                            Text(model.name, fontWeight = FontWeight.SemiBold)
+                        },
+                        leadingIcon = {
+                            if (model.id == selectedModelId) {
+                                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Color(0xFF9C27B0).copy(alpha = 0.25f),
+                            selectedLabelColor = Color.White,
+                            labelColor = Color.White
+                        )
+                    )
+                }
+
+                AiOptionRow(
+                    title = "Audio",
+                    options = listOf("none" to "No audio", "elevenlabs" to "Voice"),
+                    selected = voiceoverMode,
+                    onSelect = onVoiceoverModeChange
+                )
+                AiOptionRow(
+                    title = "Language",
+                    options = listOf(
+                        "en" to "English",
+                        "he" to "Hebrew",
+                        "ru" to "Russian",
+                        "es" to "Spanish",
+                        "de" to "German",
+                        "fr" to "French",
+                        "pt" to "Portuguese"
+                    ),
+                    selected = language,
+                    onSelect = onLanguageChange
+                )
+            }
+
+            Button(
+                onClick = onGenerate,
+                enabled = prompt.isNotBlank() && selectedModelId.isNotBlank(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0))
+            ) {
+                Text("Build Ad", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiOptionRow(
+    title: String,
+    options: List<Pair<String, String>>,
+    selected: String,
+    onSelect: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, color = Color.Gray, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (id, label) ->
+                FilterChip(
+                    selected = selected == id,
+                    onClick = { onSelect(id) },
+                    label = { Text(label) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF9C27B0).copy(alpha = 0.25f),
+                        selectedLabelColor = Color.White,
+                        labelColor = Color.White
+                    )
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun ClipActionBar(viewModel: VideoEditorViewModel) {
     val clips by viewModel.clips.collectAsState()
@@ -503,7 +640,7 @@ fun ClipActionBar(viewModel: VideoEditorViewModel) {
         if (clips.size > 1) {
             BottomActionButton(Icons.Default.Delete, "Del", color = Color(0xFFFF4444), enabled = hasClip) { viewModel.removeClip(activeClipIndex) }
         }
-        BottomActionButton(Icons.Default.SwapHoriz, "Change", color = Color(0xFFFF9500), enabled = hasClip) { viewModel.showPexelsSearchForReplace() }
+        BottomActionButton(Icons.Default.SwapHoriz, "Pexels", color = Color(0xFFFF9500), enabled = hasClip) { viewModel.showPexelsSearchForReplace() }
         BottomActionButton(Icons.Default.AutoAwesome, "AI", color = Color(0xFF9C27B0)) { viewModel.showAiPrompt() }
         BottomActionButton(Icons.Default.Subtitles, "Subs") { viewModel.setActiveTab(EditorTab.SUBTITLES); viewModel.showBottomSheet(true) }
         BottomActionButton(Icons.Default.MusicNote, "Mus") { viewModel.setActiveTab(EditorTab.MUSIC); viewModel.showBottomSheet(true) }

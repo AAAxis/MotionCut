@@ -5,12 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.util.UnstableApi
 import com.theholylabs.creator.AppState
+import com.theholylabs.creator.models.PRESET_AI_MODELS
 import com.theholylabs.creator.services.AvatarItem
 import com.theholylabs.creator.services.GenerationService
 import com.theholylabs.creator.services.LocalReelGenerator
 import com.theholylabs.creator.services.LocalScraperService
-import com.theholylabs.creator.services.LocalTTSService
-import com.theholylabs.creator.services.SupabaseService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -28,7 +27,7 @@ class CreateViewModel(application: Application) : AndroidViewModel(application) 
     private val _reelTopic = MutableStateFlow("")
     val reelTopic = _reelTopic
 
-    private val _selectedModelId = MutableStateFlow("bytedance/seedance-1-lite")
+    private val _selectedModelId = MutableStateFlow(PRESET_AI_MODELS.firstOrNull()?.id ?: "fal-ai/kling-video/v2.6/pro/text-to-video")
     val selectedModelId = _selectedModelId
 
     private val _reelAvatarImageURL = MutableStateFlow<String?>(null)
@@ -67,16 +66,9 @@ class CreateViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setAdVideoSource(source: AdVideoSource) { _adVideoSource.value = source }
 
-    private val MODEL_CREDITS = mapOf(
-        "bytedance/seedance-1-lite" to 20,
-        "bytedance/seedance-1-pro" to 30,
-        "kwaivgi/kling-v2.1" to 40,
-    )
-    val STOCK_FOOTAGE_COST = 10
+    val STOCK_FOOTAGE_COST = 0
 
-    fun getSelectedModelCost(): Int {
-        return MODEL_CREDITS[_selectedModelId.value] ?: 20
-    }
+    fun getSelectedModelCost(): Int = 0
 
     // Free reel state
     private val _freeReelLanguage = MutableStateFlow("en")
@@ -171,7 +163,8 @@ class CreateViewModel(application: Application) : AndroidViewModel(application) 
                 imageUrl = _reelAvatarImageURL.value,
                 duration = 10,
                 userId = appState.userId,
-                referenceVideoUrl = remoteVideoUrl
+                referenceVideoUrl = remoteVideoUrl,
+                context = getApplication()
             )
 
             if (response?.id != null) {
@@ -207,18 +200,10 @@ class CreateViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        if (appState.credits < 10) {
-            _errorMessage.value = "Not enough credits (need 10)"
-            return
-        }
-
         viewModelScope.launch {
             _isLoading.value = true
             _errorMessage.value = null
             _generationProgress.value = LocalReelGenerator.GenerationProgress("Starting...", 0f)
-
-            // Deduct 10 credits locally for stock footage video
-            appState.deductCredits(10)
 
             // Scrape URL if provided for better script context
             var enrichedTopic = topic
@@ -231,15 +216,14 @@ class CreateViewModel(application: Application) : AndroidViewModel(application) 
                 }
             }
 
-            // Initialize TTS if needed
-            LocalTTSService.initialize(getApplication())
-            kotlinx.coroutines.delay(500)
-
             val result = LocalReelGenerator.generate(
                 context = getApplication(),
                 topic = enrichedTopic,
                 language = _adLanguage.value,
-                clipCount = 6,
+                clipCount = if (_adVideoSource.value == AdVideoSource.AI) 4 else 6,
+                aiModelId = _selectedModelId.value,
+                sourceMode = if (_adVideoSource.value == AdVideoSource.AI) "ai" else "stock",
+                userId = appState.userId,
                 onProgress = { progress ->
                     _generationProgress.value = progress
                 }
@@ -271,8 +255,6 @@ class CreateViewModel(application: Application) : AndroidViewModel(application) 
                 // Switch to library tab
                 _switchToLibrary.value = true
             } else {
-                // Refund credits on failure
-                appState.addCredits(10)
                 _errorMessage.value = result.error ?: "Generation failed"
                 _generationProgress.value = null
             }

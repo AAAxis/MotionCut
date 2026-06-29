@@ -44,6 +44,7 @@ object VideoRenderService {
         exportQuality: String = "original",
         burnSubtitles: Boolean = false,
         subtitleYPosition: Float = 0.80f,
+        includeBranding: Boolean = true,
         onProgress: (String) -> Unit = {}
     ): File? = withContext(Dispatchers.Main) {
         if (clips.isEmpty()) return@withContext null
@@ -83,14 +84,16 @@ object VideoRenderService {
                 // Build overlay list: watermark + optional subtitle
                 val overlays = mutableListOf<TextureOverlay>()
 
-                // CreatorAI watermark (bottom-right corner)
-                val watermarkBitmap = createWatermarkBitmap(context)
-                overlays.add(
-                    BitmapOverlay.createStaticBitmapOverlay(
-                        watermarkBitmap,
-                        OverlaySettings.Builder().build()
+                if (includeBranding) {
+                    // CreatorAI watermark (bottom-right corner)
+                    val watermarkBitmap = createWatermarkBitmap(context)
+                    overlays.add(
+                        BitmapOverlay.createStaticBitmapOverlay(
+                            watermarkBitmap,
+                            OverlaySettings.Builder().build()
+                        )
                     )
-                )
+                }
 
                 // Burn subtitle overlay if enabled and clip has text
                 if (burnSubtitles && !clip.text.isNullOrBlank()) {
@@ -103,14 +106,16 @@ object VideoRenderService {
                     )
                 }
 
-                @Suppress("UNCHECKED_CAST")
-                val overlayEffect = OverlayEffect(ImmutableList.copyOf(overlays) as ImmutableList<TextureOverlay>)
-                builder.setEffects(
-                    androidx.media3.transformer.Effects(
-                        listOf(),
-                        listOf(overlayEffect)
+                if (overlays.isNotEmpty()) {
+                    @Suppress("UNCHECKED_CAST")
+                    val overlayEffect = OverlayEffect(ImmutableList.copyOf(overlays) as ImmutableList<TextureOverlay>)
+                    builder.setEffects(
+                        androidx.media3.transformer.Effects(
+                            listOf(),
+                            listOf(overlayEffect)
+                        )
                     )
-                )
+                }
 
                 builder.build()
             }

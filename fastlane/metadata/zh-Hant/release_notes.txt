@@ -1,7 +1,8 @@
-3.1版本更新：
+What's New in 3.3:
 
-• 目錄 — 瀏覽社群創作的影片。點擊播放，編輯任何提示詞並據為己有。
-• 配音錄製 — 在編輯器中直接錄製你的聲音。在時間軸上以波形顯示。
-• 時間軸滑動 — 滑動時間軸逐幀瀏覽影片。
-• 積分修復 — 你的積分餘額現在在應用和網頁儀表板之間保持同步。
-• 錯誤修復和效能改進。
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

@@ -37,8 +37,10 @@ class AudioMixerService {
             storage.deleteFile(at: mp3Path)
         }
 
-        // Temporary download path (original format)
-        let tempPath = storage.musicCacheDirectory.appendingPathComponent("audio_\(audioId)_tmp.download")
+        let sourceExtension = audioFileExtension(for: urlString)
+        let tempPath = storage.musicCacheDirectory
+            .appendingPathComponent("audio_\(audioId)_tmp")
+            .appendingPathExtension(sourceExtension)
 
         // Local file (file:// or absolute path) — copy to cache then transcode
         let sourceURL: URL? = urlString.hasPrefix("file://")
@@ -97,6 +99,18 @@ class AudioMixerService {
             if attempt < maxAttempts { try? await Task.sleep(nanoseconds: 800_000_000) }
         }
         return nil
+    }
+
+    private func audioFileExtension(for urlString: String) -> String {
+        let clean = urlString.replacingOccurrences(of: "file://", with: "")
+        let pathExtension: String
+        if let url = URL(string: urlString), let ext = url.path.split(separator: ".").last {
+            pathExtension = String(ext)
+        } else {
+            pathExtension = (clean as NSString).pathExtension
+        }
+        let normalized = pathExtension.lowercased().split(separator: "?").first.map(String.init) ?? ""
+        return normalized.isEmpty ? "mp3" : normalized
     }
 
     /// Transcode audio to M4A (AAC) using AVAssetReader/Writer for AVFoundation composition compatibility.
@@ -205,6 +219,106 @@ class AudioMixerService {
         } catch {
             return false
         }
+    }
+
+    func detachAudio(from sourceURL: URL, audioId: String, startSeconds: Double, durationSeconds: Double, speed: Double = 1.0) async -> URL? {
+        let source = AVURLAsset(url: sourceURL)
+        guard let sourceAudio = try? await source.loadTracks(withMediaType: .audio).first else {
+            print("[AudioMixer] Detach failed: source has no audio track")
+            return nil
+        }
+
+        let sourceDuration = (try? await source.load(.duration)) ?? .zero
+        let sourceSeconds = max(0, CMTimeGetSeconds(sourceDuration))
+        let start = max(0, min(startSeconds, max(0, sourceSeconds - 0.01)))
+        let length = max(0.05, min(durationSeconds, max(0.05, sourceSeconds - start)))
+        let clampedSpeed = max(0.1, min(5.0, speed))
+        let outputURL = storage.musicCacheDirectory.appendingPathComponent("detached_\(audioId).m4a")
+        let sourceRange = CMTimeRange(
+            start: CMTime(seconds: start, preferredTimescale: 600),
+            duration: CMTime(seconds: length, preferredTimescale: 600)
+        )
+
+        if abs(clampedSpeed - 1.0) <= 0.01,
+           let directURL = await exportDetachedAudioDirectly(source: source, timeRange: sourceRange, outputURL: outputURL) {
+            return directURL
+        }
+
+        let composition = AVMutableComposition()
+        guard let outputTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            return nil
+        }
+
+        do {
+            try outputTrack.insertTimeRange(sourceRange, of: sourceAudio, at: .zero)
+            if abs(clampedSpeed - 1.0) > 0.01 {
+                outputTrack.scaleTimeRange(
+                    CMTimeRange(start: .zero, duration: sourceRange.duration),
+                    toDuration: CMTime(seconds: length / clampedSpeed, preferredTimescale: 600)
+                )
+            }
+        } catch {
+            print("[AudioMixer] Detach insert failed: \(error)")
+            return nil
+        }
+
+        try? FileManager.default.removeItem(at: outputURL)
+        guard let exportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetAppleM4A) else {
+            return nil
+        }
+        exportSession.outputURL = outputURL
+        exportSession.outputFileType = .m4a
+
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            exportSession.exportAsynchronously {
+                cont.resume()
+            }
+        }
+
+        if exportSession.status == .completed,
+           storage.fileExists(at: outputURL),
+           (storage.fileSize(at: outputURL) ?? 0) > 1000 {
+            print("[AudioMixer] Detached audio: \(outputURL.lastPathComponent)")
+            return outputURL
+        }
+
+        let error = exportSession.error as NSError?
+        let underlying = error?.userInfo[NSUnderlyingErrorKey] as? NSError
+        let underlyingMessage = underlying.map { " underlying=\($0.domain) \($0.code)" } ?? ""
+        print("[AudioMixer] Detach export failed status=\(exportSession.status.rawValue) error=\(exportSession.error?.localizedDescription ?? "unknown")\(underlyingMessage)")
+        try? FileManager.default.removeItem(at: outputURL)
+        return nil
+    }
+
+    private func exportDetachedAudioDirectly(source: AVURLAsset, timeRange: CMTimeRange, outputURL: URL) async -> URL? {
+        try? FileManager.default.removeItem(at: outputURL)
+        guard let exportSession = AVAssetExportSession(asset: source, presetName: AVAssetExportPresetAppleM4A) else {
+            print("[AudioMixer] Direct detach failed: could not create export session")
+            return nil
+        }
+        exportSession.outputURL = outputURL
+        exportSession.outputFileType = .m4a
+        exportSession.timeRange = timeRange
+
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            exportSession.exportAsynchronously {
+                cont.resume()
+            }
+        }
+
+        if exportSession.status == .completed,
+           storage.fileExists(at: outputURL),
+           (storage.fileSize(at: outputURL) ?? 0) > 1000 {
+            print("[AudioMixer] Direct detached audio: \(outputURL.lastPathComponent)")
+            return outputURL
+        }
+
+        let error = exportSession.error as NSError?
+        let underlying = error?.userInfo[NSUnderlyingErrorKey] as? NSError
+        let underlyingMessage = underlying.map { " underlying=\($0.domain) \($0.code)" } ?? ""
+        print("[AudioMixer] Direct detach failed status=\(exportSession.status.rawValue) error=\(exportSession.error?.localizedDescription ?? "unknown")\(underlyingMessage)")
+        try? FileManager.default.removeItem(at: outputURL)
+        return nil
     }
 
     func mixAudioWithVideo(videoURL: URL, audioURL: URL, volume: Double = 0.5) async -> URL? {

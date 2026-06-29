@@ -12,6 +12,7 @@
  *   POST /api/credits/deduct     — Deduct credits
  *   POST /api/create/generate    — Start AI video generation (fal.ai)
  *   GET  /api/create/status/:id  — Poll generation status
+ *   POST /api/ai/script          — Generate ad script/captions with real AI
  *   GET  /health                 — Health check
  */
 
@@ -20,6 +21,7 @@
 // Must match the MODELS array in src/components/create/unified-input.tsx.
 // Cost is floored to 10 credits per video minimum (see calculateCost).
 const MODEL_CREDITS_PER_SECOND = {
+  'wan-video/wan-2.2-turbo': 2,       // hosted Wan2.2 A14B Turbo on fal.ai
   'bytedance/seedance-1-lite': 2,     // 5s = 10  (welcome-pack tier)
   'wan-video/wan-2.5-t2v-fast': 2,    // 5s = 10
   'bytedance/seedance-1-pro': 14,     // 5s = 70
@@ -162,6 +164,12 @@ const FAL_VIDEO_MODEL = 'fal-ai/pixverse/v4/text-to-video';
 // verify the path at https://fal.ai/models and adjust here.
 const MODEL_CONFIGS = {
   // ── Budget ──
+  'wan-video/wan-2.2-turbo': {
+    t2vFal: 'fal-ai/wan/v2.2-a14b/text-to-video/turbo',
+    i2vFal: 'fal-ai/wan/v2.2-a14b/image-to-video/turbo',
+    t2v: (prompt) => ({ prompt }),
+    i2v: (prompt, imageUrl) => ({ prompt, image_url: imageUrl }),
+  },
   'bytedance/seedance-1-lite': {
     t2vFal: 'fal-ai/bytedance/seedance/v1/lite/text-to-video',
     i2vFal: 'fal-ai/bytedance/seedance/v1/lite/image-to-video',
@@ -228,7 +236,8 @@ const MODEL_CONFIGS = {
 };
 
 // Default config used when an unknown modelId is sent.
-const DEFAULT_MODEL_CONFIG = MODEL_CONFIGS['bytedance/seedance-1-lite'];
+const DEFAULT_MODEL_ID = 'wan-video/wan-2.2-turbo';
+const DEFAULT_MODEL_CONFIG = MODEL_CONFIGS[DEFAULT_MODEL_ID];
 
 async function falSubmit(env, modelId, input) {
   const url = `https://queue.fal.run/${modelId}`;
@@ -257,6 +266,206 @@ async function safeJson(res) {
   const text = await res.text();
   if (!text) return {};
   try { return JSON.parse(text); } catch { return { _raw: text.slice(0, 300) }; }
+}
+
+function safeFilename(name, fallback) {
+  const clean = String(name || '')
+    .replace(/[^\w.\-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 120);
+  return clean || fallback;
+}
+
+async function uploadToStorage(env, bytes, storagePath, contentType) {
+  const key = env.SUPABASE_SERVICE_KEY || env.SUPABASE_ANON_KEY;
+  if (!env.SUPABASE_URL || !key) throw new Error('Storage is not configured');
+
+  const uploadUrl = `${env.SUPABASE_URL}/storage/v1/object/${STORAGE_BUCKET}/${storagePath}`;
+  const upRes = await fetch(uploadUrl, {
+    method: 'POST',
+    headers: {
+      'apikey': key,
+      'Authorization': `Bearer ${key}`,
+      'Content-Type': contentType || 'application/octet-stream',
+      'x-upsert': 'true',
+    },
+    body: bytes,
+  });
+
+  if (!upRes.ok) {
+    const err = await upRes.text();
+    throw new Error(`Upload failed: ${upRes.status} ${err.slice(0, 200)}`);
+  }
+
+  return `${env.SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${storagePath}`;
+}
+
+async function handleUploadImage(request, env) {
+  const form = await request.formData();
+  const userId = String(form.get('userId') || 'anonymous');
+  const file = form.get('image');
+  if (!file || typeof file.arrayBuffer !== 'function') {
+    return json({ error: 'image file is required' }, 400);
+  }
+
+  const filename = safeFilename(file.name, `${crypto.randomUUID()}.jpg`);
+  const contentType = file.type || 'image/jpeg';
+  const storagePath = `references/${safeFilename(userId, 'anonymous')}/${crypto.randomUUID()}-${filename}`;
+  const bytes = await file.arrayBuffer();
+  const url = await uploadToStorage(env, bytes, storagePath, contentType);
+
+  return json({
+    id: crypto.randomUUID(),
+    name: String(form.get('name') || filename),
+    url,
+  });
+}
+
+async function handleUploadVideo(request, env) {
+  const form = await request.formData();
+  const userId = String(form.get('userId') || 'anonymous');
+  const file = form.get('video');
+  if (!file || typeof file.arrayBuffer !== 'function') {
+    return json({ error: 'video file is required' }, 400);
+  }
+
+  const filename = safeFilename(file.name, `${crypto.randomUUID()}.mp4`);
+  const contentType = file.type || 'video/mp4';
+  const storagePath = `references/${safeFilename(userId, 'anonymous')}/${crypto.randomUUID()}-${filename}`;
+  const bytes = await file.arrayBuffer();
+  const url = await uploadToStorage(env, bytes, storagePath, contentType);
+
+  return json({
+    id: crypto.randomUUID(),
+    url,
+    filename,
+    fileSize: bytes.byteLength,
+    status: 'uploaded',
+  });
+}
+
+// ── Real AI script generation ────────────────────────────────────────
+function scriptSystemPrompt() {
+  return `You are a senior short-form ad writer and video editor.
+Return only valid JSON. No markdown. No commentary.
+Write punchy, specific, non-generic vertical video ads.
+Each scene must include searchQuery, subtitleText, voiceoverText, and durationSeconds.
+Subtitles must be natural spoken captions, 3-9 words each, written like a real creator talking.
+Voiceover must sound human, specific, and useful. No vague hype.
+Search queries must be concrete visual stock-footage queries, 2-5 words, no abstract marketing words.
+Avoid filler like "this changes everything", "nobody talks about this", "follow for more", "save this", "game changer", and vague motivational lines unless the user explicitly asks for that style.
+Do not repeat the same caption idea. Every scene must add a new concrete point.`;
+}
+
+function scriptUserPrompt({ topic, language = 'en', clipCount = 6, durationSeconds }) {
+  const count = Math.max(3, Math.min(8, Number(clipCount) || 6));
+  const total = Number(durationSeconds) || count * 2.5;
+  return `Create a ${count}-scene short ad script.
+Language code: ${language}
+Target total duration: ${total}s
+Product / idea / raw notes:
+${topic}
+
+JSON shape:
+{
+  "topic": "clear campaign title",
+  "scenes": [
+    {
+      "searchQuery": "visual stock search",
+      "subtitleText": "caption on screen",
+      "voiceoverText": "voiceover line",
+      "durationSeconds": 2.5
+    }
+  ],
+  "fullVoiceover": "all voiceover lines joined"
+}`;
+}
+
+function extractJsonObject(text) {
+  const trimmed = String(text || '').trim();
+  const start = trimmed.indexOf('{');
+  const end = trimmed.lastIndexOf('}');
+  if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
+  return trimmed;
+}
+
+function normalizeScriptPayload(payload, fallbackTopic, clipCount) {
+  const scenes = Array.isArray(payload.scenes) ? payload.scenes : [];
+  const limited = scenes.slice(0, Math.max(3, Math.min(8, Number(clipCount) || 6))).map((scene) => ({
+    searchQuery: String(scene.searchQuery || fallbackTopic).slice(0, 80),
+    subtitleText: String(scene.subtitleText || scene.voiceoverText || fallbackTopic).slice(0, 160),
+    voiceoverText: String(scene.voiceoverText || scene.subtitleText || fallbackTopic).slice(0, 260),
+    durationSeconds: Math.max(1.5, Math.min(6, Number(scene.durationSeconds) || 2.5)),
+  }));
+  if (!limited.length) throw new Error('AI returned no scenes');
+  return {
+    topic: String(payload.topic || fallbackTopic).slice(0, 120),
+    scenes: limited,
+    fullVoiceover: String(payload.fullVoiceover || limited.map((s) => s.voiceoverText).join(' ')),
+    totalDuration: limited.reduce((sum, scene) => sum + scene.durationSeconds, 0),
+  };
+}
+
+async function generateScriptWithOpenAI(env, input) {
+  const res = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: env.OPENAI_SCRIPT_MODEL || 'gpt-4.1-mini',
+      input: [
+        { role: 'system', content: scriptSystemPrompt() },
+        { role: 'user', content: scriptUserPrompt(input) },
+      ],
+      text: { format: { type: 'json_object' } },
+    }),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(data.error?.message || `OpenAI script failed: ${res.status}`);
+  const text = data.output_text || data.output?.flatMap((item) => item.content || []).map((c) => c.text || '').join('') || '';
+  return JSON.parse(extractJsonObject(text));
+}
+
+async function generateScriptWithAnthropic(env, input) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: env.ANTHROPIC_SCRIPT_MODEL || 'claude-3-5-sonnet-latest',
+      max_tokens: 1800,
+      system: scriptSystemPrompt(),
+      messages: [{ role: 'user', content: scriptUserPrompt(input) }],
+    }),
+  });
+  const data = await safeJson(res);
+  if (!res.ok) throw new Error(data.error?.message || `Anthropic script failed: ${res.status}`);
+  const text = (data.content || []).map((part) => part.text || '').join('');
+  return JSON.parse(extractJsonObject(text));
+}
+
+async function handleAIScript(request, env) {
+  const input = await request.json();
+  if (!input.topic) return json({ error: 'topic is required' }, 400);
+
+  let payload;
+  let provider;
+  if (env.OPENAI_API_KEY) {
+    provider = 'openai';
+    payload = await generateScriptWithOpenAI(env, input);
+  } else if (env.ANTHROPIC_API_KEY) {
+    provider = 'anthropic';
+    payload = await generateScriptWithAnthropic(env, input);
+  } else {
+    return json({ error: 'OPENAI_API_KEY or ANTHROPIC_API_KEY is required' }, 501);
+  }
+
+  return json({ success: true, provider, script: normalizeScriptPayload(payload, input.topic, input.clipCount) });
 }
 
 // Try multiple candidate base paths until one returns a non-405/404. fal.ai
@@ -489,7 +698,7 @@ async function handleCreditsCheck(request, env) {
   if (!user) return json({ allowed: true, credits: FREE_CREDITS, cost: 0 });
   if (user.is_subscribed) return json({ allowed: true, credits: -1, cost: 0, isSubscribed: true });
 
-  const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+  const cost = calculateCost(modelId || DEFAULT_MODEL_ID, duration);
   return json({ allowed: (user.credits || 0) >= cost, credits: user.credits || 0, cost });
 }
 
@@ -497,7 +706,7 @@ async function handleCreditsDeduct(request, env) {
   const { userId, amount, modelId, duration = 5 } = await request.json();
   if (!userId) return json({ error: 'userId required' }, 400);
 
-  const cost = amount || calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+  const cost = amount || calculateCost(modelId || DEFAULT_MODEL_ID, duration);
   const user = await getUser(env, userId);
 
   if (user?.is_subscribed) return json({ credits: -1, isSubscribed: true, deducted: 0 });
@@ -616,7 +825,7 @@ async function handleCreateGenerate(request, env) {
     });
 
     if (user && !user.is_subscribed) {
-      const cost = calculateCost(modelId || 'bytedance/seedance-1-lite', duration);
+      const cost = calculateCost(modelId || DEFAULT_MODEL_ID, duration);
       const available = user.credits || 0;
       console.log('[credits] check', { cost, available, modelId, duration });
       if (available < cost) {
@@ -633,7 +842,7 @@ async function handleCreateGenerate(request, env) {
 
   // Pick model + build input
   const hasImage = !!imageUrl;
-  let selectedModel = modelId && MODEL_CONFIGS[modelId] ? modelId : 'bytedance/seedance-1-lite';
+  let selectedModel = modelId && MODEL_CONFIGS[modelId] ? modelId : DEFAULT_MODEL_ID;
   const config = MODEL_CONFIGS[selectedModel] || DEFAULT_MODEL_CONFIG;
   let input;
   let falModelId;
@@ -816,6 +1025,9 @@ export default {
       if (path === '/api/promo/redeem' && request.method === 'POST') return handlePromoRedeem(request, env);
 
       // AI Generation (fal.ai proxy)
+      if (path === '/api/uploads/image' && request.method === 'POST') return handleUploadImage(request, env);
+      if (path === '/api/uploads/video' && request.method === 'POST') return handleUploadVideo(request, env);
+      if (path === '/api/ai/script' && request.method === 'POST') return handleAIScript(request, env);
       if (path === '/api/create/generate' && request.method === 'POST') return handleCreateGenerate(request, env);
       if (path.startsWith('/api/create/status/') && request.method === 'GET') {
         const id = path.split('/').pop();

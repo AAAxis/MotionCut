@@ -53,6 +53,9 @@ struct GenerationStatusView: View {
         #endif
         .onAppear { viewModel.startPolling() }
         .onDisappear { viewModel.stopPolling() }
+        .onReceive(NotificationCenter.default.publisher(for: .switchToLibraryTab)) { _ in
+            dismiss()
+        }
     }
 
     // MARK: - Progress View
@@ -64,9 +67,9 @@ struct GenerationStatusView: View {
                     Circle()
                         .fill(theme.primary.opacity(0.12))
                         .frame(width: 80, height: 80)
-                    ProgressView()
-                        .scaleEffect(1.5)
-                        .tint(theme.primary)
+                    Image(systemName: "film.stack")
+                        .font(.system(size: 36, weight: .semibold))
+                        .foregroundColor(theme.primary)
                 }
                 .padding(.bottom, 32)
             }

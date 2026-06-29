@@ -1,1 +1,1 @@
-テキストからAI動画を作成。10以上のモデル、ボイスオーバー録音、コミュニティカタログ — すべて1つのアプリで。
+AI video creation and editing in one place: import clips, write scripts, add voiceover, captions, music, and export faster.

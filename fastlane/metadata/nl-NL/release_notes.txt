@@ -1,7 +1,8 @@
-Nieuw in 3.1:
+What's New in 3.3:
 
-• Catalogus — Ontdek video's gemaakt door de community. Tik om af te spelen, bewerk elke prompt en maak het je eigen.
-• Voiceover opname — Neem je eigen stem op in de editor. Bekijk het als golfvorm op de tijdlijn.
-• Tijdlijn scrubben — Schuif om beeld voor beeld door je video te navigeren.
-• Credits fix — Je tegoed blijft nu gesynchroniseerd tussen de app en het webdashboard.
-• Bugfixes en prestatieverbeteringen.
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

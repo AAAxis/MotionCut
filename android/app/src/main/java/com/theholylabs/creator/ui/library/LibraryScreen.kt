@@ -46,15 +46,45 @@ import java.util.UUID
 fun LibraryScreen(
     uiState: AppUiState,
     vm: LibraryViewModel = viewModel(),
+    importRequest: Int = 0,
+    onProfileClick: () -> Unit = {},
     onPlay: (String) -> Unit,
     onShare: (String) -> Unit,
     onEdit: (videoUrl: String, videoName: String, takesJson: String?, musicUrl: String?, generationId: String?) -> Unit = { _, _, _, _, _ -> }
 ) {
     val generations by vm.generations.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val videoImportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { selectedUri ->
+            scope.launch {
+                val savedFile = withContext(Dispatchers.IO) {
+                    val id = UUID.randomUUID().toString()
+                    val dest = File(FileStorageService.savedVideosDir, "$id.mp4")
+                    context.contentResolver.openInputStream(selectedUri)?.use { input ->
+                        dest.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    if (dest.exists() && dest.length() > 0) dest else null
+                }
+                savedFile?.let {
+                    onEdit(it.absolutePath, it.nameWithoutExtension, null, null, null)
+                }
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         vm.loadGenerations()
+    }
+
+    LaunchedEffect(importRequest) {
+        if (importRequest > 0) {
+            videoImportLauncher.launch("video/*")
+        }
     }
 
     val pullRefreshState = rememberPullToRefreshState()
@@ -70,29 +100,6 @@ fun LibraryScreen(
             modifier = Modifier.fillMaxSize()
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
-                val context = LocalContext.current
-                val scope = rememberCoroutineScope()
-
-                val videoImportLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.GetContent()
-                ) { uri: Uri? ->
-                    uri?.let { selectedUri ->
-                        scope.launch {
-                            val savedFile = withContext(Dispatchers.IO) {
-                                val id = UUID.randomUUID().toString()
-                                val dest = File(FileStorageService.savedVideosDir, "$id.mp4")
-                                context.contentResolver.openInputStream(selectedUri)?.use { input ->
-                                    dest.outputStream().use { output -> input.copyTo(output) }
-                                }
-                                if (dest.exists() && dest.length() > 0) dest else null
-                            }
-                            savedFile?.let {
-                                onEdit(it.absolutePath, it.nameWithoutExtension, null, null, null)
-                            }
-                        }
-                    }
-                }
-
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -106,19 +113,19 @@ fun LibraryScreen(
                         fontWeight = FontWeight.Bold,
                         color = Color.White
                     )
-                    Button(
-                        onClick = { videoImportLauncher.launch("video/*") },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFFFF9500).copy(alpha = 0.12f),
-                            contentColor = Color(0xFFFF9500)
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                        modifier = Modifier.height(36.dp),
-                        shape = RoundedCornerShape(18.dp)
+                    IconButton(
+                        onClick = onProfileClick,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(MaterialTheme.colorScheme.surface)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Import", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Profile",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(30.dp)
+                        )
                     }
                 }
 
@@ -192,8 +199,8 @@ fun GenerationsList(
         items(generations, key = { it.id }) { gen ->
             GenerationListItem(
                 gen = gen,
-                onDelete = { vm.deleteGeneration(gen.id) },
-                onTap = { if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) (gen.resultVideoUrl ?: gen.videoUri)?.let { onEdit(it, gen.videoName, gen.takesJson, gen.musicPath, gen.id) } },
+                onDelete = { vm.deleteGeneration(gen.id, userId) },
+                onTap = { if (gen.status == GenerationStatus.COMPLETED || gen.status == GenerationStatus.SAVED) (gen.resultVideoUrl ?: gen.videoUri)?.let { onEdit(it, gen.displayName, gen.takesJson, gen.musicPath, gen.id) } },
                 onShare = { (gen.resultVideoUrl ?: gen.videoUri)?.let(onShare) }
             )
         }
@@ -261,7 +268,7 @@ fun GenerationListItem(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = gen.videoName,
+                text = gen.displayName,
                 color = Color.White,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,

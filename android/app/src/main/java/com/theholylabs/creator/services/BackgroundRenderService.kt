@@ -32,6 +32,7 @@ object BackgroundRenderService {
         addCaptionsViaCloud: Boolean,
         burnSubtitles: Boolean = false,
         subtitleYPosition: Float = 0.80f,
+        includeBranding: Boolean = true,
         existingGenerationId: String? = null,
         onStatusUpdate: (GenerationStatus) -> Unit,
         onProgress: (String) -> Unit
@@ -76,6 +77,7 @@ object BackgroundRenderService {
             exportQuality = exportQuality,
             burnSubtitles = burnSubtitles,
             subtitleYPosition = subtitleYPosition,
+            includeBranding = includeBranding,
             onProgress = onProgress
         )
 

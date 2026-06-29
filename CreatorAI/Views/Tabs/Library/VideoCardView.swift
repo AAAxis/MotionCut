@@ -40,7 +40,7 @@ struct VideoCardView: View {
 
             // Info
             VStack(alignment: .leading, spacing: 4) {
-                Text(generation.videoName)
+                Text(generation.displayName)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(theme.text)
                     .lineLimit(1)
@@ -83,8 +83,10 @@ struct VideoCardView: View {
                 .foregroundColor(.white)
                 .shadow(radius: 2)
         case .processing:
-            ProgressView()
-                .tint(.white)
+            Image(systemName: "film.stack")
+                .font(.system(size: 20))
+                .foregroundColor(.white)
+                .shadow(radius: 2)
         case .failed:
             Image(systemName: "exclamationmark.circle.fill")
                 .font(.system(size: 20))

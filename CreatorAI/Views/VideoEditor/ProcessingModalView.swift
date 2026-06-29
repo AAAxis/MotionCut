@@ -16,12 +16,12 @@ struct ProcessingModalView: View {
                         Circle()
                             .fill(theme.primary.opacity(0.12))
                             .frame(width: 80, height: 80)
-                        ProgressView()
-                            .scaleEffect(1.5)
-                            .tint(theme.primary)
+                        Image(systemName: "film.stack")
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundColor(theme.primary)
                     }
 
-                    Text(viewModel.processingMessage ?? "Processing...")
+                    Text(viewModel.processingMessage?.replacingOccurrences(of: "...", with: "") ?? "Processing")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(theme.text)
                         .multilineTextAlignment(.center)

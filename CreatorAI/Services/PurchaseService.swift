@@ -14,6 +14,7 @@ class PurchaseService: ObservableObject {
     @Published var isReady = false
     @Published var isPurchasing = false
     @Published var packages: [Package] = []
+    @Published var subscriptionPlan: CreatorSubscriptionPlan = .none
 
     private var isConfigured = false
 
@@ -45,30 +46,71 @@ class PurchaseService: ObservableObject {
 
         Purchases.shared.delegate = PurchaseDelegateHandler.shared
         print("[PurchaseService] Configured for user: \(userId)")
+        Task { await refreshSubscriptionStatus() }
     }
 
-    /// Called after a purchase with the product ID — sync credits to server
+    @discardableResult
+    func refreshSubscriptionStatus() async -> CreatorSubscriptionPlan {
+        do {
+            let customerInfo = try await Purchases.shared.customerInfo()
+            let plan = Self.subscriptionPlan(from: customerInfo)
+            subscriptionPlan = plan
+            UserDefaults.standard.set(plan.rawValue, forKey: "creator_subscription_plan")
+            return plan
+        } catch {
+            print("[PurchaseService] Failed to refresh subscription: \(error)")
+            let cached = UserDefaults.standard.string(forKey: "creator_subscription_plan")
+                .flatMap(CreatorSubscriptionPlan.init(rawValue:)) ?? .none
+            subscriptionPlan = cached
+            return cached
+        }
+    }
+
+    /// Called after a purchase with the product ID.
     func handlePurchaseCompleted(productId: String, appState: AppState) async {
+        if let plan = Self.subscriptionPlan(fromProductId: productId), plan != .none {
+            appState.applySubscriptionPlan(plan)
+            subscriptionPlan = plan
+            print("[IAP] Subscription active: \(productId) → \(plan.rawValue)")
+            return
+        }
+
         let creditsToAdd = creditAmounts[productId] ?? 100
-        await addCreditsOnServer(userId: appState.userId ?? "", productId: productId, amount: creditsToAdd)
+        appState.addCredits(creditsToAdd)
         print("[IAP] Purchase: \(productId) → +\(creditsToAdd) credits")
-        await appState.fetchCredits()
+    }
+
+    func handlePurchaseCompleted(customerInfo: CustomerInfo, appState: AppState) async {
+        let detectedPlan = Self.subscriptionPlan(from: customerInfo)
+        let plan: CreatorSubscriptionPlan = detectedPlan.isActive ? detectedPlan : .monthly
+        subscriptionPlan = plan
+        appState.applySubscriptionPlan(plan)
+        print("[IAP] Subscription active from Paywall completion → \(plan.rawValue)")
     }
 
     /// Fallback: called from PaywallView which only gives CustomerInfo — infer product from most recent transaction
     func handlePurchaseCompleted(appState: AppState) async {
         do {
             let customerInfo = try await Purchases.shared.customerInfo()
+            let plan = Self.subscriptionPlan(from: customerInfo)
+            subscriptionPlan = plan
+            appState.applySubscriptionPlan(plan)
+            if plan.isActive {
+                return
+            }
+
             let recent = customerInfo.nonSubscriptions
                 .sorted { $0.purchaseDate > $1.purchaseDate }
 
             if let latest = recent.first {
                 await handlePurchaseCompleted(productId: latest.productIdentifier, appState: appState)
             } else {
+                await appState.refreshSubscriptionStatus()
                 await appState.fetchCredits()
             }
         } catch {
             print("[IAP] Failed to get customer info after purchase: \(error)")
+            await appState.refreshSubscriptionStatus()
             await appState.fetchCredits()
         }
     }
@@ -84,7 +126,7 @@ class PurchaseService: ObservableObject {
         }
     }
 
-    /// Purchase a package and sync credits to server. Returns true on success.
+    /// Purchase a package. Returns true on success.
     func purchase(_ package: Package, appState: AppState) async -> Bool {
         isPurchasing = true
         defer { isPurchasing = false }
@@ -92,7 +134,16 @@ class PurchaseService: ObservableObject {
             let result = try await Purchases.shared.purchase(package: package)
             guard !result.userCancelled else { return false }
             let productId = package.storeProduct.productIdentifier
-            await handlePurchaseCompleted(productId: productId, appState: appState)
+            let detectedPlan = Self.subscriptionPlan(from: result.customerInfo)
+            if detectedPlan.isActive {
+                subscriptionPlan = detectedPlan
+                appState.applySubscriptionPlan(detectedPlan)
+            } else {
+                await appState.refreshSubscriptionStatus()
+            }
+            if !appState.hasUnlimitedAPIUsage {
+                await handlePurchaseCompleted(productId: productId, appState: appState)
+            }
             return true
         } catch {
             print("[PurchaseService] Purchase failed: \(error)")
@@ -103,6 +154,7 @@ class PurchaseService: ObservableObject {
     func restorePurchases() async -> Bool {
         do {
             let _ = try await Purchases.shared.restorePurchases()
+            await refreshSubscriptionStatus()
             return true
         } catch {
             print("[PurchaseService] Restore failed: \(error)")
@@ -110,35 +162,71 @@ class PurchaseService: ObservableObject {
         }
     }
 
-    // MARK: - Private
+    nonisolated static func subscriptionPlan(from customerInfo: CustomerInfo) -> CreatorSubscriptionPlan {
+        let entitlementIds = customerInfo.entitlements.active.keys.map { $0.lowercased() }
+        let entitlementProducts = customerInfo.entitlements.active.values.map { $0.productIdentifier.lowercased() }
+        let subscriptionProducts = customerInfo.activeSubscriptions.map { $0.lowercased() }
+        let allIds = entitlementIds + entitlementProducts + subscriptionProducts
 
-    private func addCreditsOnServer(userId: String, productId: String, amount: Int) async {
-        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
-        guard let url = URL(string: "\(baseURL)/api/credits/add") else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "userId": userId,
-            "productId": productId,
-            "amount": amount,
-        ])
-
-        do {
-            let _ = try await URLSession.shared.data(for: request)
-        } catch {
-            print("[IAP] Failed to add credits on server: \(error)")
+        if allIds.contains(where: { $0.contains("year") || $0.contains("annual") }) {
+            return .yearly
         }
+        if allIds.contains(where: { $0.contains("month") || $0.contains("monthly") }) {
+            return .monthly
+        }
+        if allIds.contains(where: { $0.contains("subscription") || $0.contains("unlimited") || $0.contains("premium") || $0.contains("pro") }) {
+            return .monthly
+        }
+        if !entitlementIds.isEmpty || !subscriptionProducts.isEmpty {
+            return .monthly
+        }
+        return .none
+    }
+
+    nonisolated private static func subscriptionPlan(fromProductId productId: String) -> CreatorSubscriptionPlan? {
+        let id = productId.lowercased()
+        if id.contains("year") || id.contains("annual") { return .yearly }
+        if id.contains("month") || id.contains("subscription") || id.contains("premium") || id.contains("pro") { return .monthly }
+        return nil
     }
 }
 
 // MARK: - Delegate
 
+enum CreatorSubscriptionPlan: String {
+    case none
+    case monthly
+    case yearly
+
+    var isActive: Bool { self != .none }
+
+    var displayName: String {
+        switch self {
+        case .none: return "Free"
+        case .monthly: return "Monthly"
+        case .yearly: return "Yearly"
+        }
+    }
+
+    static var current: CreatorSubscriptionPlan {
+        UserDefaults.standard.string(forKey: "creator_subscription_plan")
+            .flatMap(CreatorSubscriptionPlan.init(rawValue:)) ?? .none
+    }
+}
+
 class PurchaseDelegateHandler: NSObject, PurchasesDelegate {
     static let shared = PurchaseDelegateHandler()
 
     nonisolated func purchases(_ purchases: Purchases, receivedUpdated customerInfo: CustomerInfo) {
-        // Credits are server-side, no subscription tracking needed
+        let plan = PurchaseService.subscriptionPlan(from: customerInfo)
+        Task { @MainActor in
+            PurchaseService.shared.subscriptionPlan = plan
+            UserDefaults.standard.set(plan.rawValue, forKey: "creator_subscription_plan")
+            NotificationCenter.default.post(name: .subscriptionPlanChanged, object: plan)
+        }
     }
+}
+
+extension Notification.Name {
+    static let subscriptionPlanChanged = Notification.Name("subscriptionPlanChanged")
 }

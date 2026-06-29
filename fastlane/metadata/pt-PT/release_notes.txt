@@ -1,7 +1,8 @@
-Novidades na versão 3.1:
+What's New in 3.3:
 
-• Catálogo — Explore vídeos criados pela comunidade. Toque para reproduzir, edite qualquer prompt e faça-o seu.
-• Gravação de voz — Grave a sua voz diretamente no editor. Veja-a como forma de onda na linha temporal.
-• Navegação na linha temporal — Deslize para procurar fotograma a fotograma.
-• Correção de créditos — O seu saldo agora fica sincronizado entre a app e o painel web.
-• Correções de bugs e melhorias de desempenho.
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

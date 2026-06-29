@@ -1,4 +1,8 @@
-• AI Kreator oglasa — stvori viralne oglase za TikTok, Reels i Shorts
-• Foto-u-Video — pretvori bilo koju fotografiju u video koji je stvorio AI
-• Izdvajanje zvuka — izvuci zvuk iz bilo kojeg videa u kartici Glazba
-• Ispravci grešaka i poboljšanja performansi
+What's New in 3.3:
+
+- Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
+- Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.
+- Improved video export reliability on iPhone, iPad, and Mac.
+- Added better handling for cloud videos and missing local source files.
+- Refined navigation by removing old bottom tabs and simplifying the creation flow.
+- Bug fixes and performance improvements.

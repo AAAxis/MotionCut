@@ -11,12 +11,16 @@ class AppState: ObservableObject {
     @Published var hasSeenOnboarding: Bool
     @Published var pendingDeeplink: DeeplinkAction?
     @Published var isLoadingCredits = false
+    @Published var subscriptionPlan: CreatorSubscriptionPlan = .none
 
     private let keychainService = "com.creatorai.auth"
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         self.hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
         self.credits = UserDefaults.standard.object(forKey: "user_credits") as? Int ?? 0
+        self.subscriptionPlan = UserDefaults.standard.string(forKey: "creator_subscription_plan")
+            .flatMap(CreatorSubscriptionPlan.init(rawValue:)) ?? .none
         loadToken()
 
         // Configure RevenueCat
@@ -32,6 +36,14 @@ class AppState: ObservableObject {
             }()
             PurchaseService.shared.configure(userId: anonymousId)
         }
+        Task { await refreshSubscriptionStatus() }
+        NotificationCenter.default.publisher(for: .subscriptionPlanChanged)
+            .compactMap { $0.object as? CreatorSubscriptionPlan }
+            .receive(on: RunLoop.main)
+            .sink { [weak self] plan in
+                self?.applySubscriptionPlan(plan)
+            }
+            .store(in: &cancellables)
     }
 
     func loadToken() {
@@ -65,12 +77,15 @@ class AppState: ObservableObject {
         }
         // Cache userId for FCM token refresh (mirrors Android SharedPreferences)
         UserDefaults.standard.set(userId, forKey: "cached_user_id")
-        // Register FCM token with Supabase
+        // Register FCM token with Firestore.
         #if os(iOS)
         FCMService.shared.registerTokenForUser(userId: userId)
         #endif
         PurchaseService.shared.configure(userId: userId)
-        Task { await fetchCredits() }
+        Task {
+            await refreshSubscriptionStatus()
+            loadLocalCredits()
+        }
     }
 
     func logout() {
@@ -79,7 +94,9 @@ class AppState: ObservableObject {
         self.userEmail = nil
         self.isAuthenticated = false
         self.credits = 0
+        self.subscriptionPlan = .none
         UserDefaults.standard.set(0, forKey: "user_credits")
+        UserDefaults.standard.set(CreatorSubscriptionPlan.none.rawValue, forKey: "creator_subscription_plan")
         UserDefaults.standard.removeObject(forKey: "cached_user_id")
         KeychainHelper.delete(service: keychainService, account: "jwt")
         KeychainHelper.delete(service: keychainService, account: "userId")
@@ -87,33 +104,31 @@ class AppState: ObservableObject {
         FirebaseAuthService.shared.signOut()
     }
 
-    // MARK: - Credits (server-side)
+    // MARK: - Usage
+
+    var hasUnlimitedAPIUsage: Bool {
+        subscriptionPlan.isActive
+    }
+
+    var usageBadgeText: String {
+        hasUnlimitedAPIUsage ? "∞" : "\(credits)"
+    }
+
+    func refreshSubscriptionStatus() async {
+        subscriptionPlan = await PurchaseService.shared.refreshSubscriptionStatus()
+    }
+
+    func applySubscriptionPlan(_ plan: CreatorSubscriptionPlan) {
+        subscriptionPlan = plan
+        UserDefaults.standard.set(plan.rawValue, forKey: "creator_subscription_plan")
+    }
 
     func fetchCredits() async {
-        guard let userId = userId else { return }
-        isLoadingCredits = true
-        defer { isLoadingCredits = false }
+        loadLocalCredits()
+    }
 
-        let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
-        guard let url = URL(string: "\(baseURL)/api/credits/get") else { return }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        var body: [String: String] = ["userId": userId]
-        if let email = userEmail { body["email"] = email }
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let serverCredits = json["credits"] as? Int {
-                self.credits = serverCredits
-                UserDefaults.standard.set(serverCredits, forKey: "user_credits")
-            }
-        } catch {
-            print("[Credits] Failed to fetch: \(error)")
-        }
+    func loadLocalCredits() {
+        credits = UserDefaults.standard.object(forKey: "user_credits") as? Int ?? credits
     }
 
     func addCredits(_ amount: Int) {
@@ -124,25 +139,14 @@ class AppState: ObservableObject {
     func deductCredits(_ amount: Int) {
         credits = max(0, credits - amount)
         UserDefaults.standard.set(credits, forKey: "user_credits")
-
-        // Sync deduction to server (same as Android)
-        guard let userId = userId else { return }
-        Task {
-            let baseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "https://creatorai-api.polskoydm.workers.dev"
-            guard let url = URL(string: "\(baseURL)/api/credits/deduct") else { return }
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try? JSONSerialization.data(withJSONObject: [
-                "userId": userId,
-                "amount": amount
-            ])
-            _ = try? await URLSession.shared.data(for: request)
-        }
     }
 
     var canGenerate: Bool {
-        credits > 0
+        hasUnlimitedAPIUsage
+    }
+
+    func canSpendCredits(_ amount: Int) -> Bool {
+        amount <= 0 || credits >= amount
     }
 
     func completeOnboarding() {

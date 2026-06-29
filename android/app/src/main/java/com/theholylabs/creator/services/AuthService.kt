@@ -18,8 +18,7 @@ import java.net.URL
 import javax.net.ssl.HttpsURLConnection
 
 /**
- * Firebase Auth for sign-in + FCM.
- * User saved directly to Supabase app_users table.
+ * Firebase Auth for sign-in + Firebase-backed user persistence.
  */
 object AuthService {
 
@@ -61,8 +60,7 @@ object AuthService {
 
         Log.d(TAG, "Firebase sign-in OK: uid=${user.uid} email=${user.email}")
 
-        // Register user via Worker (uses service key to bypass Supabase RLS)
-        registerUserViaWorker(
+        FirebaseDataService.upsertUser(
             userId = user.uid,
             email = user.email,
             displayName = user.displayName,

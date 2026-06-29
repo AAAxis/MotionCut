@@ -19,7 +19,7 @@ class FCMService : FirebaseMessagingService() {
                 try {
                     val token = FirebaseMessaging.getInstance().token.await()
                     Log.d(TAG, "FCM token: $token")
-                    SupabaseService.saveFCMToken(userId, token)
+                    FirebaseDataService.saveFCMToken(userId, token)
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to get FCM token: ${e.message}")
                 }
@@ -34,7 +34,7 @@ class FCMService : FirebaseMessagingService() {
             .getString("cached_user_id", null)
         if (userId != null) {
             CoroutineScope(Dispatchers.IO).launch {
-                SupabaseService.saveFCMToken(userId, token)
+                FirebaseDataService.saveFCMToken(userId, token)
             }
         }
     }

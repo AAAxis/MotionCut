@@ -5,7 +5,11 @@ import AVFoundation
 struct MusicTabView: View {
     @ObservedObject var viewModel: VideoEditorViewModel
     @Environment(\.theme) var theme
+    var onClose: (() -> Void)? = nil
     @State private var showFilePicker = false
+    @State private var previewPlayer: AVPlayer?
+    @State private var previewingTrackId: String?
+    @State private var addingTrackId: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -82,6 +86,80 @@ struct MusicTabView: View {
                 .padding(.top, 4)
             }
 
+            if !viewModel.musicLibrary.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Library")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(theme.textSecondary)
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(viewModel.musicLibrary) { track in
+                                let isAdding = addingTrackId == track.id
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 8) {
+                                        Button {
+                                            togglePreview(track)
+                                        } label: {
+                                            ZStack {
+                                                Circle()
+                                                    .fill(theme.primary.opacity(0.12))
+                                                    .frame(width: 26, height: 26)
+                                                Image(systemName: previewingTrackId == track.id ? "stop.fill" : "play.fill")
+                                                    .font(.system(size: 11, weight: .bold))
+                                                    .foregroundColor(theme.primary)
+                                            }
+                                        }
+                                        #if os(macOS)
+                                        .buttonStyle(.plain)
+                                        #endif
+                                        .disabled(isAdding)
+
+                                        Image(systemName: "waveform")
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(theme.primary)
+
+                                        Spacer(minLength: 0)
+
+                                        if isAdding {
+                                            ProgressView()
+                                                .scaleEffect(0.55)
+                                        }
+                                    }
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(track.title ?? "Track")
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundColor(theme.textTertiary)
+                                        Text(track.name)
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .foregroundColor(theme.text)
+                                            .lineLimit(1)
+                                    }
+                                }
+                                .frame(width: 132, alignment: .leading)
+                                .padding(10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(theme.surfaceElevated)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 10)
+                                                .stroke(viewModel.selectedMusic?.id == track.id ? theme.primary : theme.border, lineWidth: 1)
+                                        )
+                                )
+                                .opacity(isAdding ? 0.72 : 1)
+                                .scaleEffect(isAdding ? 0.98 : 1)
+                                .contentShape(RoundedRectangle(cornerRadius: 10))
+                                .onTapGesture {
+                                    guard !isAdding else { return }
+                                    addTrackAndClose(track)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Add Music Button
             Button {
                 showFilePicker = true
@@ -107,9 +185,12 @@ struct MusicTabView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+        .onDisappear {
+            stopPreview()
+        }
         .fileImporter(
             isPresented: $showFilePicker,
-            allowedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav, .aiff],
+            allowedContentTypes: [.audio, .mp3, .mpeg4Audio, .wav, .aiff, .movie, .mpeg4Movie, .quickTimeMovie],
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -139,7 +220,10 @@ struct MusicTabView: View {
                         name: trackName,
                         file: destURL.absoluteString
                     )
-                    Task { await viewModel.selectMusic(track) }
+                    Task {
+                        await viewModel.addMusicTrack(track)
+                        onClose?()
+                    }
                 } catch {
                     print("[Music] Failed to copy file: \(error)")
                 }
@@ -148,6 +232,50 @@ struct MusicTabView: View {
                 print("[Music] File picker error: \(error)")
             }
         }
+    }
+
+    private func addTrackAndClose(_ track: MusicTrack) {
+        guard addingTrackId == nil else { return }
+        stopPreview()
+        addingTrackId = track.id
+        Task {
+            await viewModel.addMusicTrack(track)
+            await MainActor.run {
+                addingTrackId = nil
+                onClose?()
+            }
+        }
+    }
+
+    private func togglePreview(_ track: MusicTrack) {
+        if previewingTrackId == track.id {
+            stopPreview()
+            return
+        }
+
+        guard let url = previewURL(for: track) else { return }
+        stopPreview()
+        let player = AVPlayer(url: url)
+        previewPlayer = player
+        previewingTrackId = track.id
+        player.play()
+    }
+
+    private func stopPreview() {
+        previewPlayer?.pause()
+        previewPlayer = nil
+        previewingTrackId = nil
+    }
+
+    private func previewURL(for track: MusicTrack) -> URL? {
+        if track.file.hasPrefix("file://"), let url = URL(string: track.file) {
+            return url
+        }
+        let filePath = track.file.replacingOccurrences(of: "file://", with: "")
+        if filePath.hasPrefix("/"), FileManager.default.fileExists(atPath: filePath) {
+            return URL(fileURLWithPath: filePath)
+        }
+        return URL(string: track.file)
     }
 
 }

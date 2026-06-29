@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.layout.onSizeChanged
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.theholylabs.creator.models.Clip
 import com.theholylabs.creator.services.ThumbnailService
 import com.theholylabs.creator.viewmodels.VideoEditorViewModel
@@ -165,7 +167,7 @@ fun ClipsTimelineView(
                                                     change.consume()
                                                     dragOffsetX += dragAmount.x
                                                     // Calculate target index based on drag distance
-                                                    val avgClipWidth = with(density) { clipW.toPx() }
+                                                    val avgClipWidth = with(density) { clipW.dp.toPx() }
                                                     val movedSlots = (dragOffsetX / avgClipWidth).toInt()
                                                     val targetIndex = (index + movedSlots).coerceIn(0, clips.size - 1)
                                                     if (targetIndex != index) {

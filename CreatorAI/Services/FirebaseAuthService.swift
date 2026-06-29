@@ -9,7 +9,7 @@ import AuthenticationServices
 #endif
 
 /// Firebase Auth for sign-in (Google + Apple).
-/// User saved directly to Supabase app_users table (same pattern as Android).
+/// User profile is saved to Firestore after Firebase Auth succeeds.
 final class FirebaseAuthService {
     static let shared = FirebaseAuthService()
     private init() {}
@@ -180,8 +180,7 @@ final class FirebaseAuthService {
 
         print("[Auth] Firebase sign-in OK: uid=\(user.uid) email=\(user.email ?? "nil")")
 
-        // Register user via Worker (uses service key to bypass RLS)
-        await registerUserViaWorker(
+        await FirebaseDataService.shared.upsertUser(
             userId: user.uid,
             email: user.email,
             displayName: user.displayName,

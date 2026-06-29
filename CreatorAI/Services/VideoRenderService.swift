@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreText
 import QuartzCore
 #if canImport(UIKit)
 import UIKit
@@ -20,7 +21,7 @@ class VideoRenderService {
 
     // MARK: - Main Render Entry
 
-    func renderVideo(clips: [Clip], music: MusicRenderOptions?, voiceover: VoiceoverRenderOptions? = nil, aspectRatio: String = "1:1", onProgress: ProgressCallback?) async -> URL? {
+    func renderVideo(clips: [Clip], music: MusicRenderOptions?, additionalMusic: [MusicRenderOptions] = [], voiceover: VoiceoverRenderOptions? = nil, aspectRatio: String = "1:1", includeBranding: Bool = true, onProgress: ProgressCallback?) async -> URL? {
         let report: (String) -> Void = { msg in
             print("[renderVideo] \(msg)")
             onProgress?(msg)
@@ -52,20 +53,26 @@ class VideoRenderService {
 
         let isReelMode = localClips.contains { $0.beatDuration != nil }
 
+        let requiresExternalAudio = ([music].compactMap { $0 } + additionalMusic).contains { !$0.isMuted } || (voiceover?.isMuted == false)
+
         if isReelMode {
-            if let url = await renderReelModeWithAVFoundation(clips: localClips, music: music, outputPath: outputPath, onProgress: report) {
+            if let url = await renderReelModeWithAVFoundation(clips: localClips, music: music, additionalMusic: additionalMusic, voiceover: voiceover, outputPath: outputPath, includeBranding: includeBranding, onProgress: report) {
                 return url
             }
-            if let url = await renderReelMode(clips: localClips, music: music, aspectRatio: aspectRatio, outputPath: outputPath, onProgress: report) {
+            if let url = await renderReelMode(clips: localClips, music: music, aspectRatio: aspectRatio, outputPath: outputPath, includeBranding: includeBranding, onProgress: report) {
                 return url
             }
         } else {
-            if let url = await renderStandardModeWithAVFoundation(clips: localClips, music: music, voiceover: voiceover, outputPath: outputPath, onProgress: report) {
+            if let url = await renderStandardModeWithAVFoundation(clips: localClips, music: music, additionalMusic: additionalMusic, voiceover: voiceover, outputPath: outputPath, includeBranding: includeBranding, onProgress: report) {
                 return url
             }
-            if let url = await renderStandardMode(clips: localClips, music: music, voiceover: voiceover, outputPath: outputPath, onProgress: report) {
+            if let url = await renderStandardMode(clips: localClips, music: music, voiceover: voiceover, outputPath: outputPath, includeBranding: includeBranding, onProgress: report) {
                 return url
             }
+        }
+        if requiresExternalAudio {
+            print("[renderVideo] Export failed with required external audio; refusing silent fallback")
+            return nil
         }
         return copyFirstClipAsFallback(clips: localClips, outputPath: outputPath)
     }
@@ -96,16 +103,173 @@ class VideoRenderService {
         return URL(fileURLWithPath: path)
     }
 
-    private func renderStandardModeWithAVFoundation(clips: [Clip], music: MusicRenderOptions?, voiceover: VoiceoverRenderOptions? = nil, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
+    private func addMusicTracks(
+        _ musicOptions: [MusicRenderOptions],
+        to composition: AVMutableComposition,
+        videoDuration: CMTime,
+        existingAudioMix: AVMutableAudioMix?,
+        onProgress: @escaping (String) -> Void
+    ) async -> AVMutableAudioMix? {
+        var audioMix = existingAudioMix
+        var mixParams = audioMix?.inputParameters ?? []
+
+        for (index, musicOpt) in musicOptions.enumerated() {
+            guard !musicOpt.isMuted else { continue }
+            guard let musicPath = musicOpt.resolvedPath ?? musicOpt.file,
+                  let musicURL = urlForPath(musicPath) else { continue }
+            onProgress(index == 0 ? "Adding music..." : "Adding audio row \(index + 1)...")
+            let musicAsset = AVURLAsset(url: musicURL)
+            guard let musicAudioTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first,
+                  let musicTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+            else { continue }
+
+            let musicDuration = (try? await musicAsset.load(.duration)) ?? .zero
+            let videoSeconds = CMTimeGetSeconds(videoDuration)
+            let startSeconds = max(0, min(musicOpt.timelineStart, videoSeconds))
+            let endSeconds = max(startSeconds, min(musicOpt.timelineEnd ?? videoSeconds, videoSeconds))
+            let timelineDuration = max(0, endSeconds - startSeconds)
+            let musicDurationSeconds = max(0, CMTimeGetSeconds(musicDuration))
+            guard timelineDuration > 0, musicDurationSeconds > 0 else { continue }
+
+            var insertedSeconds: Double = 0
+            while insertedSeconds < timelineDuration - 0.01 {
+                let segmentSeconds = min(musicDurationSeconds, timelineDuration - insertedSeconds)
+                let insertAt = CMTime(seconds: startSeconds + insertedSeconds, preferredTimescale: 600)
+                let segmentDuration = CMTime(seconds: segmentSeconds, preferredTimescale: 600)
+                try? musicTrack.insertTimeRange(
+                    CMTimeRange(start: .zero, duration: segmentDuration),
+                    of: musicAudioTrack,
+                    at: insertAt
+                )
+                insertedSeconds += segmentSeconds
+            }
+
+            let params = AVMutableAudioMixInputParameters(track: musicTrack)
+            params.setVolume(Float(musicOpt.volume), at: CMTime(seconds: startSeconds, preferredTimescale: 600))
+            mixParams.append(params)
+        }
+
+        guard !mixParams.isEmpty else { return audioMix }
+        let mix = audioMix ?? AVMutableAudioMix()
+        mix.inputParameters = mixParams
+        return mix
+    }
+
+    private func addVoiceoverTrack(
+        _ voiceover: VoiceoverRenderOptions?,
+        to composition: AVMutableComposition,
+        videoDuration: CMTime,
+        existingAudioMix: AVMutableAudioMix?,
+        onProgress: @escaping (String) -> Void
+    ) async -> AVMutableAudioMix? {
+        var audioMix = existingAudioMix
+        guard let vo = voiceover, !vo.isMuted else { return audioMix }
+
+        onProgress("Adding voiceover...")
+        let voAsset = AVURLAsset(url: vo.fileURL)
+        guard let voAudioTrack = try? await voAsset.loadTracks(withMediaType: .audio).first,
+              let voTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        else { return audioMix }
+
+        let voDuration = (try? await voAsset.load(.duration)) ?? .zero
+        let videoDurationSeconds = max(0, CMTimeGetSeconds(videoDuration))
+        let voDurationSeconds = max(0, CMTimeGetSeconds(voDuration))
+        let timelineStart = max(0, min(vo.timelineStart, videoDurationSeconds))
+        let timelineEnd = max(timelineStart, min(vo.timelineEnd ?? videoDurationSeconds, videoDurationSeconds))
+        let requestedDuration = max(0, timelineEnd - timelineStart)
+        let insertDurationSeconds = min(requestedDuration, voDurationSeconds)
+        guard insertDurationSeconds > 0 else { return audioMix }
+
+        let insertAt = CMTime(seconds: timelineStart, preferredTimescale: 600)
+        let insertDuration = CMTime(seconds: insertDurationSeconds, preferredTimescale: 600)
+        let voRange = CMTimeRange(start: .zero, duration: insertDuration)
+        try? voTrack.insertTimeRange(voRange, of: voAudioTrack, at: insertAt)
+
+        let voMixParams = AVMutableAudioMixInputParameters(track: voTrack)
+        voMixParams.setVolume(Float(vo.volume), at: insertAt)
+
+        let mix = audioMix ?? AVMutableAudioMix()
+        mix.inputParameters = mix.inputParameters + [voMixParams]
+        audioMix = mix
+        return audioMix
+    }
+
+    private func applyTransitions(
+        to layerInstruction: AVMutableVideoCompositionLayerInstruction,
+        segments: [(start: CMTime, duration: CMTime, clip: Clip)]
+    ) {
+        guard segments.count > 1 else { return }
+
+        for index in 0..<(segments.count - 1) {
+            let segment = segments[index]
+            let next = segments[index + 1]
+            let transition = segment.clip.transitionName
+            guard transition != "None" else { continue }
+
+            let segmentSeconds = CMTimeGetSeconds(segment.duration)
+            let nextSeconds = CMTimeGetSeconds(next.duration)
+            guard segmentSeconds > 0.2, nextSeconds > 0.2 else { continue }
+
+            let requested = max(0.1, min(1.2, segment.clip.transitionDuration))
+            let durationSeconds = min(requested, segmentSeconds * 0.45, nextSeconds * 0.45)
+            guard durationSeconds > 0.05 else { continue }
+
+            let transitionDuration = CMTime(seconds: durationSeconds, preferredTimescale: 600)
+            let fadeOutStart = CMTimeSubtract(CMTimeAdd(segment.start, segment.duration), transitionDuration)
+            let fadeInStart = next.start
+
+            layerInstruction.setOpacityRamp(
+                fromStartOpacity: 1,
+                toEndOpacity: 0,
+                timeRange: CMTimeRange(start: fadeOutStart, duration: transitionDuration)
+            )
+
+            layerInstruction.setOpacityRamp(
+                fromStartOpacity: 0,
+                toEndOpacity: 1,
+                timeRange: CMTimeRange(start: fadeInStart, duration: transitionDuration)
+            )
+
+            if transition == "Dip" {
+                let holdStart = CMTimeSubtract(CMTimeAdd(segment.start, segment.duration), CMTime(seconds: min(0.08, durationSeconds / 2), preferredTimescale: 600))
+                layerInstruction.setOpacity(0, at: holdStart)
+            }
+        }
+    }
+
+    private func adjustedTransform(base: CGAffineTransform, renderSize: CGSize, clip: Clip) -> CGAffineTransform {
+        let clampedX = CGFloat(max(0.08, min(0.92, clip.videoX)))
+        let clampedY = CGFloat(max(0.08, min(0.92, clip.videoY)))
+
+        if clip.videoLayoutMode == "PiP" {
+            let scale = CGFloat(max(0.18, min(0.85, clip.videoScale)))
+            let targetW = renderSize.width * scale
+            let targetH = renderSize.height * scale
+            let x = (renderSize.width * clampedX) - (targetW / 2)
+            let y = (renderSize.height * clampedY) - (targetH / 2)
+            return base
+                .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+                .concatenating(CGAffineTransform(translationX: x, y: y))
+        }
+
+        return base
+    }
+
+    private func renderStandardModeWithAVFoundation(clips: [Clip], music: MusicRenderOptions?, additionalMusic: [MusicRenderOptions] = [], voiceover: VoiceoverRenderOptions? = nil, outputPath: URL, includeBranding: Bool, onProgress: @escaping (String) -> Void) async -> URL? {
         onProgress("Preparing clips...")
         let composition = AVMutableComposition()
         guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
-        let addOriginalAudio = (music == nil)
+        let addOriginalAudio = music == nil && additionalMusic.isEmpty
         let audioTrack: AVMutableCompositionTrack? = addOriginalAudio ? composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) : nil
 
         var currentTime = CMTime.zero
         var renderSize = CGSize(width: 1920, height: 1080)
         var firstTrackTransform: CGAffineTransform = .identity
+        var clipSegments: [(start: CMTime, duration: CMTime, clip: Clip)] = []
+        var clipAudioMixParams: AVMutableAudioMixInputParameters?
+        if let audioTrack {
+            clipAudioMixParams = AVMutableAudioMixInputParameters(track: audioTrack)
+        }
 
         for (i, clip) in clips.enumerated() {
             guard let clipURL = urlForPath(clip.localUri ?? clip.uri) else { continue }
@@ -123,8 +287,9 @@ class VideoRenderService {
             let range = CMTimeRange(start: startTime, duration: rangeDuration)
 
             try? videoTrack.insertTimeRange(range, of: assetVideo, at: currentTime)
-            if let audioTrack = audioTrack, let assetAudio = try? await asset.loadTracks(withMediaType: .audio).first {
+            if !clip.isMuted, let audioTrack = audioTrack, let assetAudio = try? await asset.loadTracks(withMediaType: .audio).first {
                 try? audioTrack.insertTimeRange(range, of: assetAudio, at: currentTime)
+                clipAudioMixParams?.setVolume(Float(max(0, min(1, clip.audioVolume))), at: currentTime)
             }
 
             if i == 0 {
@@ -139,65 +304,37 @@ class VideoRenderService {
             // Apply speed change: scaleTimeRange stretches/compresses the inserted segment
             let speed = max(0.1, min(5.0, clip.speed))
             let insertedRange = CMTimeRange(start: currentTime, duration: rangeDuration)
+            let segmentStart = currentTime
+            let segmentDuration: CMTime
             if abs(speed - 1.0) > 0.01 {
                 let scaledDuration = CMTimeMultiplyByFloat64(rangeDuration, multiplier: 1.0 / speed)
                 videoTrack.scaleTimeRange(insertedRange, toDuration: scaledDuration)
                 if let audioTrack = audioTrack {
                     audioTrack.scaleTimeRange(insertedRange, toDuration: scaledDuration)
                 }
+                segmentDuration = scaledDuration
                 currentTime = CMTimeAdd(currentTime, scaledDuration)
             } else {
+                segmentDuration = rangeDuration
                 currentTime = CMTimeAdd(currentTime, rangeDuration)
             }
+            clipSegments.append((start: segmentStart, duration: segmentDuration, clip: clip))
         }
 
         if CMTimeGetSeconds(currentTime) < 0.01 { return nil }
 
         // Add music track directly to the composition (avoids two-step export)
         var audioMix: AVMutableAudioMix?
-        if let musicOpt = music, let musicPath = musicOpt.resolvedPath, let musicURL = urlForPath(musicPath) {
-            onProgress("Adding music...")
-            let musicAsset = AVURLAsset(url: musicURL)
-            if let musicAudioTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first {
-                if let musicTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-                    let musicDuration = (try? await musicAsset.load(.duration)) ?? .zero
-                    let insertDuration = CMTimeGetSeconds(currentTime) < CMTimeGetSeconds(musicDuration) ? currentTime : musicDuration
-                    let musicRange = CMTimeRange(start: .zero, duration: insertDuration)
-                    try? musicTrack.insertTimeRange(musicRange, of: musicAudioTrack, at: .zero)
-
-                    let mixParams = AVMutableAudioMixInputParameters(track: musicTrack)
-                    mixParams.setVolume(Float(musicOpt.volume), at: .zero)
-                    let mix = AVMutableAudioMix()
-                    mix.inputParameters = [mixParams]
-                    audioMix = mix
-                }
-            }
+        if let clipAudioMixParams {
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [clipAudioMixParams]
+            audioMix = mix
         }
-
-        // Add voiceover track (recorded audio)
-        if let vo = voiceover {
-            onProgress("Adding voiceover...")
-            let voAsset = AVURLAsset(url: vo.fileURL)
-            if let voAudioTrack = try? await voAsset.loadTracks(withMediaType: .audio).first {
-                if let voTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-                    let voDuration = (try? await voAsset.load(.duration)) ?? .zero
-                    let insertDuration = CMTimeGetSeconds(currentTime) < CMTimeGetSeconds(voDuration) ? currentTime : voDuration
-                    let voRange = CMTimeRange(start: .zero, duration: insertDuration)
-                    try? voTrack.insertTimeRange(voRange, of: voAudioTrack, at: .zero)
-
-                    let voMixParams = AVMutableAudioMixInputParameters(track: voTrack)
-                    voMixParams.setVolume(Float(vo.volume), at: .zero)
-
-                    if var mix = audioMix {
-                        mix.inputParameters = mix.inputParameters + [voMixParams]
-                        audioMix = mix
-                    } else {
-                        let mix = AVMutableAudioMix()
-                        mix.inputParameters = [voMixParams]
-                        audioMix = mix
-                    }
-                }
-            }
+        let musicOptions = [music].compactMap { $0 } + additionalMusic
+        let requiresExternalAudio = musicOptions.contains { !$0.isMuted } || (voiceover?.isMuted == false)
+        if !requiresExternalAudio {
+            audioMix = await addMusicTracks(musicOptions, to: composition, videoDuration: currentTime, existingAudioMix: audioMix, onProgress: onProgress)
+            audioMix = await addVoiceoverTrack(voiceover, to: composition, videoDuration: currentTime, existingAudioMix: audioMix, onProgress: onProgress)
         }
 
         let videoComposition = AVMutableVideoComposition()
@@ -207,12 +344,37 @@ class VideoRenderService {
         instruction.timeRange = CMTimeRange(start: .zero, duration: currentTime)
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
         layerInstruction.setTransform(firstTrackTransform, at: .zero)
+        for segment in clipSegments {
+            layerInstruction.setTransform(
+                adjustedTransform(base: firstTrackTransform, renderSize: renderSize, clip: segment.clip),
+                at: segment.start
+            )
+        }
+        applyTransitions(to: layerInstruction, segments: clipSegments)
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
 
         // Add CreatorAI branding (watermark + outro card)
         var brandedComposition = videoComposition
-        addBranding(to: composition, videoComposition: &brandedComposition, videoDuration: currentTime)
+        if includeBranding {
+            addBranding(to: composition, videoComposition: &brandedComposition, videoDuration: currentTime, clips: clips)
+        }
+
+        if requiresExternalAudio {
+            print("[renderVideo] Required audio present; rendering video first, then muxing audio")
+            if let mixed = await renderVideoOnlyThenMixExternalAudio(
+                composition: composition,
+                videoComposition: brandedComposition,
+                musicOptions: musicOptions,
+                voiceover: voiceover,
+                outputPath: outputPath,
+                onProgress: onProgress
+            ) {
+                return mixed
+            }
+            print("[renderVideo] Required audio mux failed")
+            return nil
+        }
 
         if await exportComposition(composition, videoComposition: brandedComposition, audioMix: audioMix, to: outputPath) {
             return outputPath
@@ -220,6 +382,21 @@ class VideoRenderService {
         print("[renderVideo] Standard export failed, retrying with no composition...")
         if await exportComposition(composition, videoComposition: nil, audioMix: audioMix, to: outputPath) {
             return outputPath
+        }
+        if requiresExternalAudio {
+            print("[renderVideo] External audio export failed, trying video-only render then audio mux...")
+            if let mixed = await renderVideoOnlyThenMixExternalAudio(
+                composition: composition,
+                videoComposition: brandedComposition,
+                musicOptions: musicOptions,
+                voiceover: voiceover,
+                outputPath: outputPath,
+                onProgress: onProgress
+            ) {
+                return mixed
+            }
+            print("[renderVideo] External audio fallback failed")
+            return nil
         }
         // -12849 often occurs with audio mix; retry without music mix (clips + original audio only)
         if audioMix != nil {
@@ -245,21 +422,41 @@ class VideoRenderService {
         return nil
     }
 
-    private func renderReelModeWithAVFoundation(clips: [Clip], music: MusicRenderOptions?, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
+    private func renderReelModeWithAVFoundation(clips: [Clip], music: MusicRenderOptions?, additionalMusic: [MusicRenderOptions] = [], voiceover: VoiceoverRenderOptions? = nil, outputPath: URL, includeBranding: Bool, onProgress: @escaping (String) -> Void) async -> URL? {
+        let hasPerClipBurnIn = clips.contains {
+            ($0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) || $0.overlayImageUri != nil
+        }
+        if hasPerClipBurnIn {
+            return await renderReelModeByBurningClipsThenMerging(
+                clips: clips,
+                music: music,
+                additionalMusic: additionalMusic,
+                voiceover: voiceover,
+                outputPath: outputPath,
+                includeBranding: includeBranding,
+                onProgress: onProgress
+            )
+        }
+
         let composition = AVMutableComposition()
         guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
         // When music is present, keep clips muted (no clip audio) so we only have 1 audio track — avoids -12849 and keeps music mandatory.
-        let audioTrack: AVMutableCompositionTrack? = (music == nil)
+        let audioTrack: AVMutableCompositionTrack? = (music == nil && additionalMusic.isEmpty)
             ? composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
             : nil
 
         var currentTime = CMTime.zero
         let renderSize = CGSize(width: 1080, height: 1920)
+        var clipAudioMixParams: AVMutableAudioMixInputParameters?
+        if let audioTrack {
+            clipAudioMixParams = AVMutableAudioMixInputParameters(track: audioTrack)
+        }
 
         // Use a SINGLE layer instruction for the single video track.
         // Multiple layer instructions for the same track causes AVAssetExportSession error -16979.
         let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
         var hasAudioData = false
+        var clipSegments: [(start: CMTime, duration: CMTime, clip: Clip)] = []
 
         for (i, clip) in clips.enumerated() {
             onProgress("Rendering take \(i + 1) of \(clips.count)...")
@@ -297,8 +494,9 @@ class VideoRenderService {
                 print("[renderVideo] Reel clip \(i): insertTimeRange failed: \(error)")
                 continue
             }
-            if let assetAudio = assetAudio, let audioTrack = audioTrack {
+            if !clip.isMuted, let assetAudio = assetAudio, let audioTrack = audioTrack {
                 try? audioTrack.insertTimeRange(range, of: assetAudio, at: currentTime)
+                clipAudioMixParams?.setVolume(Float(max(0, min(1, clip.audioVolume))), at: currentTime)
                 hasAudioData = true
             }
 
@@ -321,13 +519,15 @@ class VideoRenderService {
                 // Normalize the preferredTransform origin before scaling so that
                 // any rotation-induced translation doesn't get scaled incorrectly.
                 let originAfterPreferred = CGPoint.zero.applying(preferredTransform)
-                let transform = preferredTransform
+                let baseTransform = preferredTransform
                     .concatenating(CGAffineTransform(translationX: -originAfterPreferred.x, y: -originAfterPreferred.y))
                     .concatenating(CGAffineTransform(scaleX: scale, y: scale))
                     .concatenating(CGAffineTransform(translationX: tx, y: ty))
+                let transform = adjustedTransform(base: baseTransform, renderSize: renderSize, clip: clip)
                 layerInstruction.setTransform(transform, at: currentTime)
             }
 
+            clipSegments.append((start: currentTime, duration: rangeDuration, clip: clip))
             currentTime = CMTimeAdd(currentTime, rangeDuration)
         }
 
@@ -342,46 +542,77 @@ class VideoRenderService {
         }
 
         // Apply video composition for uniform sizing
-        let videoComposition = AVMutableVideoComposition()
+        var videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = renderSize
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
         let mainInstruction = AVMutableVideoCompositionInstruction()
         mainInstruction.timeRange = CMTimeRange(start: .zero, duration: currentTime)
+        applyTransitions(to: layerInstruction, segments: clipSegments)
         mainInstruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [mainInstruction]
+        if includeBranding {
+            addBranding(to: composition, videoComposition: &videoComposition, videoDuration: currentTime, segments: clipSegments)
+        }
 
         // Add music track directly to the composition (avoids two-step export that triggers -12849)
         var audioMix: AVMutableAudioMix?
-        if let musicOpt = music, let musicPath = musicOpt.resolvedPath, let musicURL = urlForPath(musicPath) {
-            onProgress("Adding music...")
-            let musicAsset = AVURLAsset(url: musicURL)
-            if let musicAudioTrack = try? await musicAsset.loadTracks(withMediaType: .audio).first {
-                if let musicTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-                    let musicDuration = (try? await musicAsset.load(.duration)) ?? .zero
-                    // Trim music to match video length
-                    let insertDuration = CMTimeGetSeconds(currentTime) < CMTimeGetSeconds(musicDuration) ? currentTime : musicDuration
-                    let musicRange = CMTimeRange(start: .zero, duration: insertDuration)
-                    try? musicTrack.insertTimeRange(musicRange, of: musicAudioTrack, at: .zero)
+        if let clipAudioMixParams, hasAudioData {
+            let mix = AVMutableAudioMix()
+            mix.inputParameters = [clipAudioMixParams]
+            audioMix = mix
+        }
+        let musicOptions = [music].compactMap { $0 } + additionalMusic
+        let requiresExternalAudio = musicOptions.contains { !$0.isMuted } || (voiceover?.isMuted == false)
+        if !requiresExternalAudio {
+            audioMix = await addMusicTracks(musicOptions, to: composition, videoDuration: currentTime, existingAudioMix: audioMix, onProgress: onProgress)
+            audioMix = await addVoiceoverTrack(voiceover, to: composition, videoDuration: currentTime, existingAudioMix: audioMix, onProgress: onProgress)
+        }
 
-                    let mixParams = AVMutableAudioMixInputParameters(track: musicTrack)
-                    mixParams.setVolume(Float(musicOpt.volume), at: .zero)
-                    let mix = AVMutableAudioMix()
-                    mix.inputParameters = [mixParams]
-                    audioMix = mix
-                    print("[renderVideo] Music track added to composition (duration: \(CMTimeGetSeconds(insertDuration))s)")
-                }
-            } else {
-                print("[renderVideo] Could not load audio track from music file")
+        if requiresExternalAudio {
+            print("[renderVideo] Required audio present; rendering reel video first, then muxing audio")
+            if let mixed = await renderVideoOnlyThenMixExternalAudio(
+                composition: composition,
+                videoComposition: videoComposition,
+                musicOptions: musicOptions,
+                voiceover: voiceover,
+                outputPath: outputPath,
+                onProgress: onProgress
+            ) {
+                return mixed
             }
+            print("[renderVideo] Required audio mux failed")
+            return nil
         }
 
         if await exportComposition(composition, videoComposition: videoComposition, audioMix: audioMix, to: outputPath) {
             return outputPath
         }
         // Fallbacks if video composition export fails (-16979)
+        let hasBurnedOverlays = clips.contains {
+            ($0.text?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false) || $0.overlayImageUri != nil
+        }
+        if hasBurnedOverlays {
+            print("[renderVideo] Reel export with captions failed; refusing no-composition fallback that would drop subtitles")
+            return nil
+        }
         print("[renderVideo] Export with video composition failed, retrying with no composition (all clips + music)...")
         if await exportComposition(composition, videoComposition: nil, audioMix: audioMix, to: outputPath) {
             return outputPath
+        }
+        if requiresExternalAudio {
+            print("[renderVideo] External audio export failed, trying video-only render then audio mux...")
+            if let mixed = await renderVideoOnlyThenMixExternalAudio(
+                composition: composition,
+                videoComposition: videoComposition,
+                musicOptions: musicOptions,
+                voiceover: voiceover,
+                outputPath: outputPath,
+                onProgress: onProgress
+            ) {
+                return mixed
+            }
+            print("[renderVideo] External audio fallback failed")
+            return nil
         }
         if audioMix != nil {
             print("[renderVideo] Retrying with no composition and no music mix (clips only)...")
@@ -404,6 +635,189 @@ class VideoRenderService {
             }
         }
         return nil
+    }
+
+    private func renderReelModeByBurningClipsThenMerging(
+        clips: [Clip],
+        music: MusicRenderOptions?,
+        additionalMusic: [MusicRenderOptions],
+        voiceover: VoiceoverRenderOptions?,
+        outputPath: URL,
+        includeBranding: Bool,
+        onProgress: @escaping (String) -> Void
+    ) async -> URL? {
+        let renderSize = CGSize(width: 1080, height: 1920)
+        var renderedClipURLs: [URL] = []
+
+        for (index, clip) in clips.enumerated() {
+            onProgress("Burning caption \(index + 1) of \(clips.count)...")
+            let clipOutput = storage.renderedVideosDirectory
+                .appendingPathComponent("burned_clip_\(index)_\(UUID().uuidString).mp4")
+            guard let rendered = await renderSingleReelClipWithBurnIn(
+                clip: clip,
+                index: index,
+                outputURL: clipOutput,
+                renderSize: renderSize,
+                includeBranding: includeBranding
+            ) else {
+                print("[renderVideo] Per-clip burn failed for clip \(index)")
+                continue
+            }
+            renderedClipURLs.append(rendered)
+        }
+
+        guard !renderedClipURLs.isEmpty else { return nil }
+
+        onProgress("Merging rendered clips...")
+        let mergedComposition = AVMutableComposition()
+        guard let mergedVideoTrack = mergedComposition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            return nil
+        }
+        let mergedAudioTrack = mergedComposition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+        var cursor = CMTime.zero
+        var hasMergedAudio = false
+
+        for url in renderedClipURLs {
+            let asset = AVURLAsset(url: url)
+            let duration = (try? await asset.load(.duration)) ?? .zero
+            guard CMTimeGetSeconds(duration) > 0,
+                  let sourceVideo = try? await asset.loadTracks(withMediaType: .video).first else { continue }
+
+            do {
+                try mergedVideoTrack.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: sourceVideo, at: cursor)
+                if let sourceAudio = try? await asset.loadTracks(withMediaType: .audio).first,
+                   let mergedAudioTrack {
+                    try? mergedAudioTrack.insertTimeRange(CMTimeRange(start: .zero, duration: duration), of: sourceAudio, at: cursor)
+                    hasMergedAudio = true
+                }
+                cursor = CMTimeAdd(cursor, duration)
+            } catch {
+                print("[renderVideo] Merge burned clip failed: \(error)")
+            }
+        }
+
+        if !hasMergedAudio, let mergedAudioTrack {
+            mergedComposition.removeTrack(mergedAudioTrack)
+        }
+
+        guard CMTimeGetSeconds(cursor) > 0 else { return nil }
+
+        let musicOptions = [music].compactMap { $0 } + additionalMusic
+        let requiresExternalAudio = musicOptions.contains { !$0.isMuted } || (voiceover?.isMuted == false)
+        if requiresExternalAudio {
+            let tempVideo = outputPath
+                .deletingLastPathComponent()
+                .appendingPathComponent("burned_merged_video_\(UUID().uuidString).mp4")
+            guard await exportComposition(mergedComposition, videoComposition: nil, audioMix: nil, to: tempVideo) else {
+                return nil
+            }
+            defer { try? FileManager.default.removeItem(at: tempVideo) }
+            guard let mixed = await mixRenderedVideoWithExternalAudio(
+                videoURL: tempVideo,
+                musicOptions: musicOptions,
+                voiceover: voiceover,
+                outputPath: outputPath,
+                onProgress: onProgress
+            ) else {
+                return nil
+            }
+            renderedClipURLs.forEach { try? FileManager.default.removeItem(at: $0) }
+            return mixed
+        }
+
+        let success = await exportComposition(mergedComposition, videoComposition: nil, audioMix: nil, to: outputPath)
+        renderedClipURLs.forEach { try? FileManager.default.removeItem(at: $0) }
+        return success ? outputPath : nil
+    }
+
+    private func renderSingleReelClipWithBurnIn(
+        clip: Clip,
+        index: Int,
+        outputURL: URL,
+        renderSize: CGSize,
+        includeBranding: Bool
+    ) async -> URL? {
+        guard let clipURL = urlForPath(clip.localUri ?? clip.uri) else { return nil }
+        let asset = AVURLAsset(url: clipURL)
+        guard let assetVideo = try? await asset.loadTracks(withMediaType: .video).first else {
+            print("[renderVideo] Burn clip \(index): no video track")
+            return nil
+        }
+
+        let loadedDuration = try? await asset.load(.duration)
+        let sourceDuration = max(0.1, clip.sourceDuration ?? (loadedDuration.map { CMTimeGetSeconds($0) } ?? 10))
+        let beatDuration = max(0.1, min(clip.beatDuration ?? sourceDuration, sourceDuration))
+        let maxStart = max(0, sourceDuration - beatDuration)
+        let startOffset = Double.random(in: 0...max(0.01, maxStart))
+        let rangeDuration = CMTime(seconds: beatDuration, preferredTimescale: 600)
+        let range = CMTimeRange(
+            start: CMTime(seconds: startOffset, preferredTimescale: 600),
+            duration: rangeDuration
+        )
+
+        let composition = AVMutableComposition()
+        guard let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            return nil
+        }
+
+        do {
+            try videoTrack.insertTimeRange(range, of: assetVideo, at: .zero)
+        } catch {
+            print("[renderVideo] Burn clip \(index): insert video failed \(error)")
+            return nil
+        }
+
+        if !clip.isMuted,
+           let assetAudio = try? await asset.loadTracks(withMediaType: .audio).first,
+           let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+            try? audioTrack.insertTimeRange(range, of: assetAudio, at: .zero)
+        }
+
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = renderSize
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: rangeDuration)
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
+
+        let naturalSize = (try? await assetVideo.load(.naturalSize)) ?? CGSize(width: 1920, height: 1080)
+        let preferredTransform = (try? await assetVideo.load(.preferredTransform)) ?? .identity
+        let transformed = naturalSize.applying(preferredTransform)
+        let clipW = abs(transformed.width)
+        let clipH = abs(transformed.height)
+        if clipW > 0 && clipH > 0 {
+            let scale = max(renderSize.width / clipW, renderSize.height / clipH)
+            let scaledW = clipW * scale
+            let scaledH = clipH * scale
+            let tx = (renderSize.width - scaledW) / 2
+            let ty = (renderSize.height - scaledH) / 2
+            let originAfterPreferred = CGPoint.zero.applying(preferredTransform)
+            let baseTransform = preferredTransform
+                .concatenating(CGAffineTransform(translationX: -originAfterPreferred.x, y: -originAfterPreferred.y))
+                .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+                .concatenating(CGAffineTransform(translationX: tx, y: ty))
+            layerInstruction.setTransform(adjustedTransform(base: baseTransform, renderSize: renderSize, clip: clip), at: .zero)
+        }
+
+        instruction.layerInstructions = [layerInstruction]
+        videoComposition.instructions = [instruction]
+        var compositionWithOverlay = videoComposition
+        if includeBranding {
+            addBranding(
+                to: composition,
+                videoComposition: &compositionWithOverlay,
+                videoDuration: rangeDuration,
+                segments: [(start: .zero, duration: rangeDuration, clip: clip)]
+            )
+        }
+
+        guard await exportComposition(composition, videoComposition: compositionWithOverlay, audioMix: nil, to: outputURL),
+              storage.fileExists(at: outputURL),
+              (storage.fileSize(at: outputURL) ?? 0) > 1000 else {
+            return nil
+        }
+
+        return outputURL
     }
 
     /// Builds video + animation layers for burning captions into the reel. Each segment's text is shown at the bottom center for its duration.
@@ -458,7 +872,12 @@ class VideoRenderService {
     // MARK: - CreatorAI Branding (watermark + outro)
 
     /// Adds a small CreatorAI logo watermark (bottom-right) and a 2s outro card.
-    private func addBranding(to composition: AVMutableComposition, videoComposition: inout AVMutableVideoComposition, videoDuration: CMTime) {
+    private func addBranding(to composition: AVMutableComposition, videoComposition: inout AVMutableVideoComposition, videoDuration: CMTime, clips: [Clip] = []) {
+        let segments = timelineSegments(from: clips)
+        addBranding(to: composition, videoComposition: &videoComposition, videoDuration: videoDuration, segments: segments)
+    }
+
+    private func addBranding(to composition: AVMutableComposition, videoComposition: inout AVMutableVideoComposition, videoDuration: CMTime, segments: [(start: CMTime, duration: CMTime, clip: Clip)]) {
         let renderSize = videoComposition.renderSize
         guard renderSize.width > 0, renderSize.height > 0 else { return }
 
@@ -469,6 +888,55 @@ class VideoRenderService {
         animationLayer.frame = CGRect(origin: .zero, size: renderSize)
         animationLayer.beginTime = AVCoreAnimationBeginTimeAtZero
         animationLayer.addSublayer(videoLayer)
+
+        for segment in segments {
+            let clip = segment.clip
+            let clipStart = max(0, CMTimeGetSeconds(segment.start))
+            let clipDuration = max(0.05, CMTimeGetSeconds(segment.duration))
+            if let text = clip.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !text.isEmpty {
+                let textStart = max(0, min(100, clip.textStart)) / 100.0
+                let textEnd = max(textStart + 0.01, min(100, clip.textEnd) / 100.0)
+                let begin = clipStart + clipDuration * textStart
+                let duration = max(0.05, clipDuration * (textEnd - textStart))
+                let textLayer = Self.captionTextLayer(
+                    text: text,
+                    fontName: clip.textFontName,
+                    renderSize: renderSize,
+                    x: clip.textX,
+                    y: clip.textY,
+                    beginTime: begin,
+                    duration: duration
+                )
+                animationLayer.addSublayer(textLayer)
+            }
+
+            if let overlayPath = clip.overlayImageUri,
+               let image = Self.image(at: overlayPath)?.platformCGImage {
+                let size = min(renderSize.width, renderSize.height) * CGFloat(max(0.08, min(0.65, clip.overlayScale)))
+                let centerX = renderSize.width * CGFloat(max(0.08, min(0.92, clip.overlayX)))
+                let centerYFromTop = renderSize.height * CGFloat(max(0.08, min(0.92, clip.overlayY)))
+                let logoLayer = CALayer()
+                logoLayer.contents = image
+                logoLayer.contentsGravity = .resizeAspect
+                logoLayer.frame = CGRect(
+                    x: centerX - size / 2,
+                    y: renderSize.height - centerYFromTop - size / 2,
+                    width: size,
+                    height: size
+                )
+                logoLayer.opacity = 0
+                let visibleAnim = CABasicAnimation(keyPath: "opacity")
+                visibleAnim.fromValue = 1
+                visibleAnim.toValue = 1
+                visibleAnim.beginTime = clipStart
+                visibleAnim.duration = clipDuration
+                visibleAnim.fillMode = .both
+                visibleAnim.isRemovedOnCompletion = false
+                logoLayer.add(visibleAnim, forKey: "visible-window")
+                animationLayer.addSublayer(logoLayer)
+            }
+        }
 
         // -- Watermark logo (bottom-right, throughout video) --
         let logoSize: CGFloat = min(renderSize.width, renderSize.height) * 0.06
@@ -519,6 +987,75 @@ class VideoRenderService {
         )
     }
 
+    private func timelineSegments(from clips: [Clip]) -> [(start: CMTime, duration: CMTime, clip: Clip)] {
+        var cursor = CMTime.zero
+        var segments: [(start: CMTime, duration: CMTime, clip: Clip)] = []
+        for clip in clips {
+            let seconds = max(0.05, ((clip.beatDuration ?? clip.sourceDuration ?? 3.0) * (clip.trimEnd - clip.trimStart) / 100.0) / max(0.1, clip.speed))
+            let duration = CMTime(seconds: seconds, preferredTimescale: 600)
+            segments.append((start: cursor, duration: duration, clip: clip))
+            cursor = CMTimeAdd(cursor, duration)
+        }
+        return segments
+    }
+
+    private static func captionTextLayer(text: String, fontName: String, renderSize: CGSize, x: Double, y: Double, beginTime: Double, duration: Double) -> CATextLayer {
+        let fontSize = max(18, min(renderSize.width, renderSize.height) * 0.052)
+        let textWidth = renderSize.width * 0.84
+        let textHeight = max(fontSize * 2.8, min(renderSize.height * 0.24, fontSize * 5.2))
+        let centerX = renderSize.width * CGFloat(max(0.08, min(0.92, x)))
+        let centerYFromTop = renderSize.height * CGFloat(max(0.08, min(0.92, y)))
+
+        let layer = CATextLayer()
+        layer.string = text
+        layer.font = CTFontCreateWithName(captionFontName(for: fontName), 0, nil)
+        layer.fontSize = fontSize
+        layer.foregroundColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+        layer.alignmentMode = .center
+        layer.contentsScale = 2.0
+        layer.frame = CGRect(
+            x: max(12, min(renderSize.width - textWidth - 12, centerX - textWidth / 2)),
+            y: max(12, min(renderSize.height - textHeight - 12, renderSize.height - centerYFromTop - textHeight / 2)),
+            width: textWidth,
+            height: textHeight
+        )
+        layer.isWrapped = true
+        layer.truncationMode = .end
+        layer.shadowColor = CGColor(red: 0, green: 0, blue: 0, alpha: 1)
+        layer.shadowOffset = CGSize(width: 2, height: 2)
+        layer.shadowOpacity = 0.95
+        layer.shadowRadius = 3
+        layer.opacity = 0
+
+        let visibleAnim = CABasicAnimation(keyPath: "opacity")
+        visibleAnim.fromValue = 1
+        visibleAnim.toValue = 1
+        visibleAnim.beginTime = beginTime
+        visibleAnim.duration = duration
+        visibleAnim.fillMode = .both
+        visibleAnim.isRemovedOnCompletion = false
+        layer.add(visibleAnim, forKey: "visible-window")
+
+        return layer
+    }
+
+    private static func captionFontName(for name: String) -> CFString {
+        switch name {
+        case "Rounded":
+            return "ArialRoundedMTBold" as CFString
+        case "Serif":
+            return "TimesNewRomanPS-BoldMT" as CFString
+        case "Avenir Next":
+            return "AvenirNext-DemiBold" as CFString
+        case "Helvetica Neue":
+            return "HelveticaNeue-Bold" as CFString
+        case "Georgia":
+            return "Georgia-Bold" as CFString
+        default:
+            return "HelveticaNeue-Bold" as CFString
+        }
+    }
+
     /// Load the app icon from the bundle.
     private static func appIconImage() -> PlatformImage? {
         #if os(iOS)
@@ -532,6 +1069,12 @@ class VideoRenderService {
         #else
         return NSImage(named: "AppIcon") ?? NSApplication.shared.applicationIconImage
         #endif
+    }
+
+    private static func image(at path: String) -> PlatformImage? {
+        let url = path.hasPrefix("file://") ? URL(string: path) : URL(fileURLWithPath: path)
+        guard let url, let data = try? Data(contentsOf: url) else { return nil }
+        return PlatformImage.from(data: data)
     }
 
     private func exportComposition(_ composition: AVMutableComposition, videoComposition: AVMutableVideoComposition? = nil, audioMix: AVMutableAudioMix? = nil, to url: URL) async -> Bool {
@@ -592,6 +1135,148 @@ class VideoRenderService {
         return false
     }
 
+    private func renderVideoOnlyThenMixExternalAudio(
+        composition: AVMutableComposition,
+        videoComposition: AVMutableVideoComposition?,
+        musicOptions: [MusicRenderOptions],
+        voiceover: VoiceoverRenderOptions?,
+        outputPath: URL,
+        onProgress: @escaping (String) -> Void
+    ) async -> URL? {
+        guard !composition.tracks(withMediaType: .video).isEmpty else { return nil }
+
+        // Keep the original composition because videoComposition layer instructions
+        // reference its video tracks. Creating a new composition here can invalidate
+        // those instructions and make the fallback fail during export.
+        let audioTracks = composition.tracks(withMediaType: .audio)
+        audioTracks.forEach { composition.removeTrack($0) }
+
+        let videoOnlyURL = outputPath
+            .deletingLastPathComponent()
+            .appendingPathComponent("video_only_\(UUID().uuidString).mp4")
+        guard await exportComposition(composition, videoComposition: videoComposition, audioMix: nil, to: videoOnlyURL) else {
+            return nil
+        }
+
+        let mixedURL = outputPath
+            .deletingLastPathComponent()
+            .appendingPathComponent("mixed_\(UUID().uuidString).mp4")
+        guard let mixed = await mixRenderedVideoWithExternalAudio(
+            videoURL: videoOnlyURL,
+            musicOptions: musicOptions,
+            voiceover: voiceover,
+            outputPath: mixedURL,
+            onProgress: onProgress
+        ) else {
+            print("[renderVideo] Audio mux failed")
+            try? FileManager.default.removeItem(at: videoOnlyURL)
+            return nil
+        }
+
+        do {
+            try? FileManager.default.removeItem(at: outputPath)
+            try FileManager.default.moveItem(at: mixed, to: outputPath)
+            try? FileManager.default.removeItem(at: videoOnlyURL)
+            return outputPath
+        } catch {
+            print("[renderVideo] Move mixed fallback failed: \(error)")
+            try? FileManager.default.removeItem(at: videoOnlyURL)
+            return mixed
+        }
+    }
+
+    private func mixRenderedVideoWithExternalAudio(
+        videoURL: URL,
+        musicOptions: [MusicRenderOptions],
+        voiceover: VoiceoverRenderOptions?,
+        outputPath: URL,
+        onProgress: @escaping (String) -> Void
+    ) async -> URL? {
+        onProgress("Mixing audio...")
+        let videoAsset = AVURLAsset(url: videoURL)
+        let composition = AVMutableComposition()
+        guard let sourceVideo = try? await videoAsset.loadTracks(withMediaType: .video).first,
+              let videoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+        else { return nil }
+
+        let videoDuration = (try? await videoAsset.load(.duration)) ?? .zero
+        guard CMTimeGetSeconds(videoDuration) > 0 else { return nil }
+        do {
+            try videoTrack.insertTimeRange(CMTimeRange(start: .zero, duration: videoDuration), of: sourceVideo, at: .zero)
+            videoTrack.preferredTransform = (try? await sourceVideo.load(.preferredTransform)) ?? sourceVideo.preferredTransform
+        } catch {
+            print("[renderVideo] Audio mux video insert failed: \(error)")
+            return nil
+        }
+
+        var mixParams: [AVMutableAudioMixInputParameters] = []
+        for musicOpt in musicOptions where !musicOpt.isMuted {
+            guard let musicPath = musicOpt.resolvedPath ?? musicOpt.file,
+                  let musicURL = urlForPath(musicPath) else { continue }
+            let musicAsset = AVURLAsset(url: musicURL)
+            guard let sourceAudio = try? await musicAsset.loadTracks(withMediaType: .audio).first,
+                  let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
+            else { continue }
+
+            let sourceDuration = (try? await musicAsset.load(.duration)) ?? .zero
+            let sourceSeconds = CMTimeGetSeconds(sourceDuration)
+            let videoSeconds = CMTimeGetSeconds(videoDuration)
+            let startSeconds = max(0, min(musicOpt.timelineStart, videoSeconds))
+            let endSeconds = max(startSeconds, min(musicOpt.timelineEnd ?? videoSeconds, videoSeconds))
+            let requestedSeconds = max(0, endSeconds - startSeconds)
+            guard sourceSeconds > 0, requestedSeconds > 0 else { continue }
+
+            var insertedSeconds: Double = 0
+            while insertedSeconds < requestedSeconds - 0.01 {
+                let segmentSeconds = min(sourceSeconds, requestedSeconds - insertedSeconds)
+                try? audioTrack.insertTimeRange(
+                    CMTimeRange(start: .zero, duration: CMTime(seconds: segmentSeconds, preferredTimescale: 600)),
+                    of: sourceAudio,
+                    at: CMTime(seconds: startSeconds + insertedSeconds, preferredTimescale: 600)
+                )
+                insertedSeconds += segmentSeconds
+            }
+
+            audioTrack.preferredVolume = Float(musicOpt.volume)
+            let params = AVMutableAudioMixInputParameters(track: audioTrack)
+            params.setVolume(Float(musicOpt.volume), at: CMTime(seconds: startSeconds, preferredTimescale: 600))
+            mixParams.append(params)
+        }
+
+        if let vo = voiceover, !vo.isMuted {
+            let voAsset = AVURLAsset(url: vo.fileURL)
+            if let sourceAudio = try? await voAsset.loadTracks(withMediaType: .audio).first,
+               let audioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                let voDuration = (try? await voAsset.load(.duration)) ?? .zero
+                let videoSeconds = CMTimeGetSeconds(videoDuration)
+                let timelineStart = max(0, min(vo.timelineStart, videoSeconds))
+                let timelineEnd = max(timelineStart, min(vo.timelineEnd ?? videoSeconds, videoSeconds))
+                let insertSeconds = min(max(0, timelineEnd - timelineStart), max(0, CMTimeGetSeconds(voDuration)))
+                if insertSeconds > 0 {
+                    try? audioTrack.insertTimeRange(
+                        CMTimeRange(start: .zero, duration: CMTime(seconds: insertSeconds, preferredTimescale: 600)),
+                        of: sourceAudio,
+                        at: CMTime(seconds: timelineStart, preferredTimescale: 600)
+                    )
+                    audioTrack.preferredVolume = Float(vo.volume)
+                    let params = AVMutableAudioMixInputParameters(track: audioTrack)
+                    params.setVolume(Float(vo.volume), at: CMTime(seconds: timelineStart, preferredTimescale: 600))
+                    mixParams.append(params)
+                }
+            }
+        }
+
+        guard !mixParams.isEmpty else { return nil }
+        let audioMix = AVMutableAudioMix()
+        audioMix.inputParameters = mixParams
+        if await exportComposition(composition, videoComposition: nil, audioMix: audioMix, to: outputPath) {
+            return outputPath
+        }
+
+        print("[renderVideo] Audio mux with audioMix failed, retrying with track volumes only")
+        return await exportComposition(composition, videoComposition: nil, audioMix: nil, to: outputPath) ? outputPath : nil
+    }
+
     private func mixVideoWithMusic(videoURL: URL, musicURL: URL, volume: Float, outputPath: URL) async -> URL? {
         let composition = AVMutableComposition()
         let videoAsset = AVURLAsset(url: videoURL)
@@ -645,7 +1330,7 @@ class VideoRenderService {
         }
     }
 
-    private func renderReelMode(clips: [Clip], music: MusicRenderOptions?, aspectRatio: String, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
+    private func renderReelMode(clips: [Clip], music: MusicRenderOptions?, aspectRatio: String, outputPath: URL, includeBranding: Bool, onProgress: @escaping (String) -> Void) async -> URL? {
         let (outW, outH) = outputSize(for: aspectRatio)
         var processedPaths: [URL] = []
 
@@ -676,8 +1361,12 @@ class VideoRenderService {
 
             let cleanText = sanitizeText(clip.text ?? "")
             if !cleanText.isEmpty {
+                let textStart = max(0, min(clip.textStart, 100)) / 100 * beatDuration
+                let textEnd = max(textStart + 0.05, min(clip.textEnd, 100) / 100 * beatDuration)
+                let textX = max(0.08, min(clip.textX, 0.92))
+                let textY = max(0.08, min(clip.textY, 0.92))
                 filters.append(
-                    "drawtext=text='\(cleanText)':fontsize=52:fontcolor=white:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=(w-text_w)/2:y=(h*0.45)"
+                    "drawtext=text='\(cleanText)':fontsize=52:fontcolor=white:shadowcolor=black@0.9:shadowx=3:shadowy=3:x=(w-text_w)*\(String(format: "%.3f", textX)):y=(h-text_h)*\(String(format: "%.3f", textY)):enable='between(t,\(String(format: "%.3f", textStart)),\(String(format: "%.3f", textEnd)))'"
                 )
             }
 
@@ -736,7 +1425,7 @@ class VideoRenderService {
 
     // MARK: - Standard Mode (concat with trim + optional music)
 
-    private func renderStandardMode(clips: [Clip], music: MusicRenderOptions?, voiceover: VoiceoverRenderOptions? = nil, outputPath: URL, onProgress: @escaping (String) -> Void) async -> URL? {
+    private func renderStandardMode(clips: [Clip], music: MusicRenderOptions?, voiceover: VoiceoverRenderOptions? = nil, outputPath: URL, includeBranding: Bool, onProgress: @escaping (String) -> Void) async -> URL? {
         onProgress("Preparing clips...")
 
         let fileListPath = storage.renderedVideosDirectory.appendingPathComponent("filelist.txt")
@@ -822,10 +1511,16 @@ struct MusicRenderOptions {
     let file: String?
     let volume: Double
     let quality: String
+    var timelineStart: Double = 0
+    var timelineEnd: Double? = nil
     var resolvedPath: String?
+    var isMuted: Bool = false
 }
 
 struct VoiceoverRenderOptions {
     let fileURL: URL
     let volume: Double
+    var timelineStart: Double = 0
+    var timelineEnd: Double? = nil
+    var isMuted: Bool = false
 }

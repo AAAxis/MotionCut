@@ -392,8 +392,7 @@ fun ReelCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus:
             } else {
                 Icon(Icons.Default.Bolt, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
-                val reelCost = remember(selectedId) { vm.getSelectedModelCost() }
-                Text("Generate Reel \u00b7 $reelCost credits", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("Generate Reel", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
         }
     }
@@ -443,6 +442,7 @@ fun AdCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus: (
     val selectedLang by vm.adLanguage.collectAsState()
     val isLoading by vm.isLoading.collectAsState()
     val adSource by vm.adVideoSource.collectAsState()
+    val selectedModelId by vm.selectedModelId.collectAsState()
     val progress by vm.generationProgress.collectAsState()
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -498,6 +498,52 @@ fun AdCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus: (
 
         Spacer(modifier = Modifier.height(20.dp))
 
+        SectionLabel("VIDEO SOURCE")
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf(
+                com.theholylabs.creator.viewmodels.AdVideoSource.STOCK to "Pexels",
+                com.theholylabs.creator.viewmodels.AdVideoSource.AI to "AI"
+            ).forEach { (source, label) ->
+                val isSelected = adSource == source
+                Button(
+                    onClick = { vm.setAdVideoSource(source) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSelected) Color(0xFFFF9500).copy(alpha = 0.1f) else Color(0xFF1C1C1E),
+                        contentColor = if (isSelected) Color(0xFFFF9500) else Color.White
+                    ),
+                    modifier = Modifier.height(40.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, if (isSelected) Color(0xFFFF9500) else Color(0xFF3A3A3C))
+                ) {
+                    Text(text = label, fontSize = 14.sp)
+                }
+            }
+        }
+
+        if (adSource == com.theholylabs.creator.viewmodels.AdVideoSource.AI) {
+            Spacer(modifier = Modifier.height(14.dp))
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(PRESET_AI_MODELS) { model ->
+                    val isSelected = selectedModelId == model.id
+                    Button(
+                        onClick = { vm.selectModel(model.id) },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSelected) Color(0xFFFF9500).copy(alpha = 0.1f) else Color(0xFF1C1C1E),
+                            contentColor = if (isSelected) Color(0xFFFF9500) else Color.White
+                        ),
+                        modifier = Modifier.height(40.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, if (isSelected) Color(0xFFFF9500) else Color(0xFF3A3A3C))
+                    ) {
+                        Text(text = model.name, fontSize = 14.sp)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
         SectionLabel("VOICEOVER LANGUAGE")
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -520,8 +566,7 @@ fun AdCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus: (
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Progress indicator for Stock mode
-        if (adSource == com.theholylabs.creator.viewmodels.AdVideoSource.STOCK && progress != null) {
+        if (progress != null) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -557,13 +602,12 @@ fun AdCreatorView(vm: CreateViewModel, appState: AppState, onNavigateToStatus: (
         ) {
             if (isLoading) {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
-                if (adSource == com.theholylabs.creator.viewmodels.AdVideoSource.STOCK && progress != null) {
+                if (progress != null) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(progress?.step ?: "Generating...", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                 }
             } else {
-                val cost = if (adSource == com.theholylabs.creator.viewmodels.AdVideoSource.STOCK) vm.STOCK_FOOTAGE_COST else vm.getSelectedModelCost()
-                Text("Generate Video \u00b7 $cost credits", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("Generate Video", fontWeight = FontWeight.Bold, fontSize = 17.sp)
             }
         }
     }

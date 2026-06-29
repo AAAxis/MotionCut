@@ -4,7 +4,6 @@ struct MainTabView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.theme) var theme
     @State private var navigationPath = NavigationPath()
-    @State private var selectedTab = 2
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -23,10 +22,6 @@ struct MainTabView: View {
                         SettingsView(showCloseButton: true, userId: appState.userId ?? "demo-user")
                     }
                 }
-                #if os(iOS)
-                .toolbarBackground(theme.background, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                #endif
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         #if os(iOS)
@@ -47,16 +42,6 @@ struct MainTabView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .switchToLibraryTab)) { _ in
             navigationPath = NavigationPath()
-            selectedTab = 0
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .catalogUsePrompt)) { notification in
-            if let prompt = notification.object as? String {
-                navigationPath = NavigationPath()
-                selectedTab = 2
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    NotificationCenter.default.post(name: .prefillPrompt, object: prompt)
-                }
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .togglePlayback)) { _ in
             // Forward to video editor if active
@@ -70,16 +55,24 @@ struct MainTabView: View {
             switch action {
             case .switchTab(let index):
                 navigationPath = NavigationPath()
-                selectedTab = index
+                if index == 1 {
+                    navigationPath.append(Route.settings)
+                }
             case .generationStatus(let id, let title):
                 navigationPath = NavigationPath()
-                selectedTab = 0
                 navigationPath.append(Route.generationStatus(id: id, title: title))
             case .videoEditor(let params):
-                navigationPath.append(Route.videoEditor(params))
+                if let instruction = params.aiInstruction?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !instruction.isEmpty,
+                   params.videoUri == nil,
+                   params.takesJson == nil {
+                    NotificationCenter.default.post(name: .applyEditorAIInstruction, object: instruction)
+                } else {
+                    navigationPath.append(Route.videoEditor(params))
+                }
             case .settings:
                 navigationPath = NavigationPath()
-                selectedTab = 3
+                navigationPath.append(Route.settings)
             }
         }
     }
@@ -91,39 +84,49 @@ struct MainTabView: View {
         #if os(macOS)
         MacWorkspaceView()
         #else
-        // iOS: bottom tab bar
-        TabView(selection: $selectedTab) {
-            LibraryView()
-                .tabItem {
-                    Image(systemName: "play.rectangle.fill")
-                    Text("Library")
-                }
-                .tag(0)
+        ZStack(alignment: .bottom) {
+            LibraryView {
+                navigationPath.append(Route.settings)
+            }
+                .padding(.bottom, 98)
 
-            CatalogView()
-                .tabItem {
-                    Image(systemName: "rectangle.grid.2x2")
-                    Text("Catalog")
-                }
-                .tag(1)
-
-            CreateView()
-                .tabItem {
-                    Image(systemName: "plus.circle.fill")
-                    Text("Create")
-                }
-                .tag(2)
-
-            SettingsView(showCloseButton: false, userId: appState.userId ?? "demo-user")
-                .tabItem {
-                    Image(systemName: "person.fill")
-                    Text("Profile")
-                }
-                .tag(3)
+            bottomActionSheet
         }
-        .tint(theme.primary)
         #endif
     }
+
+    #if os(iOS)
+    private var bottomActionSheet: some View {
+        HStack(spacing: 12) {
+            Button {
+                navigationPath.append(Route.videoEditor(VideoEditorParams(
+                    videoName: "Editor",
+                    userId: appState.userId ?? "demo-user"
+                )))
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "timeline.selection")
+                        .font(.system(size: 18, weight: .semibold))
+                    Text("Open Editor")
+                        .font(.system(size: 17, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 56)
+                .background(theme.primary)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
+        .background(
+            Rectangle()
+                .fill(theme.background.opacity(0.96))
+                .ignoresSafeArea(edges: .bottom)
+        )
+    }
+    #endif
 
 }
 
@@ -139,6 +142,7 @@ enum Route: Hashable {
         var takesJson: String?
         var musicUrl: String?
         var userId: String
+        var aiInstruction: String? = nil
     }
 }
 
