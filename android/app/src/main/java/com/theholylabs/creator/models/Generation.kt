@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import java.io.File
 
 @Serializable
 enum class GenerationStatus {
@@ -33,6 +34,21 @@ data class Generation(
             if (clean.isNotEmpty() && clean !in setOf("Editor", "Video", "Imported Video")) return clean
             titleFromTakesJson()?.let { return it }
             return clean.ifEmpty { "Video" }
+        }
+
+    val hasLocalLibraryMedia: Boolean
+        get() {
+            if (status == GenerationStatus.PROCESSING) return true
+            videoUri?.removePrefix("file://")?.takeIf { it.isNotBlank() }?.let {
+                if (File(it).exists()) return true
+            }
+            resultVideoUrl?.removePrefix("file://")?.takeIf {
+                it.isNotBlank() && !it.startsWith("http://") && !it.startsWith("https://")
+            }?.let {
+                if (File(it).exists()) return true
+            }
+            if (!takesJson.isNullOrBlank()) return true
+            return false
         }
 
     private fun titleFromTakesJson(): String? {

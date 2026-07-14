@@ -1033,16 +1033,12 @@ actor GenerationService {
     // MARK: - List
 
     func fetchGenerations(userId: String) async throws -> [Generation] {
-        // Load local first (instant)
+        // The user's video library is device-local only. Do not merge remote
+        // generations here; otherwise one account/config mistake can expose
+        // another user's generated videos in Library.
         let deletedIds = loadDeletedGenerationIds()
-        var local = loadLocalGenerations().filter { !deletedIds.contains($0.id) }
-
-        // Fetch remote from Firestore and merge.
-        let remote = await FirebaseDataService.shared.fetchGenerations(userId: userId)
-        for remoteGen in remote where !deletedIds.contains(remoteGen.id) {
-            if !local.contains(where: { $0.id == remoteGen.id }) {
-                local.append(remoteGen)
-            }
+        var local = loadLocalGenerations().filter {
+            !deletedIds.contains($0.id) && $0.hasLocalLibraryMedia
         }
 
         // Sort by newest first
@@ -1119,10 +1115,9 @@ actor GenerationService {
             saveDeletedGenerationIds(deletedIds)
         }
         var existing = loadLocalGenerations()
+        existing.removeAll { $0.id == generation.id }
         existing.insert(generation, at: 0)
         saveGenerations(existing)
-        // Sync to Firestore in background.
-        Task { await FirebaseDataService.shared.upsertGeneration(generation) }
     }
 
     /// Update an existing generation by id; preserves createdAt and other fields.
@@ -1136,8 +1131,6 @@ actor GenerationService {
         if let m = musicFile { existing[idx].musicFile = m }
         if let e = errorMessage { existing[idx].errorMessage = e }
         saveGenerations(existing)
-        // Sync to Firestore in background.
-        Task { await FirebaseDataService.shared.upsertGeneration(existing[idx], remoteVideoUrl: existing[idx].resultVideoUrl) }
     }
 
     func deleteGeneration(id: String) {
@@ -1147,11 +1140,6 @@ actor GenerationService {
         deleteLocalFiles(for: deleted, id: id)
         existing.removeAll { $0.id == id }
         saveGenerations(existing)
-        // Delete from Firebase in background.
-        Task {
-            await FirebaseDataService.shared.deleteGeneration(id: id)
-            await FirebaseDataService.shared.deleteVideo(generationId: id)
-        }
     }
 
     /// Deletes all local generations and their video files. Call when user chooses "Delete my data".
@@ -1160,10 +1148,6 @@ actor GenerationService {
         for gen in existing {
             markGenerationDeleted(gen.id)
             deleteLocalFiles(for: gen, id: gen.id)
-            Task {
-                await FirebaseDataService.shared.deleteGeneration(id: gen.id)
-                await FirebaseDataService.shared.deleteVideo(generationId: gen.id)
-            }
         }
         saveGenerations([])
     }

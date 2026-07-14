@@ -76,6 +76,7 @@ final class FirebaseDataService {
         }
     }
 
+    @available(*, unavailable, message: "User-generated library videos are local-only. Do not upload them to Firebase.")
     func uploadVideo(fileURL: URL, generationId: String, userId explicitUserId: String? = nil) async -> String? {
         guard let userId = explicitUserId ?? Auth.auth().currentUser?.uid else {
             print("[FirebaseData] Upload skipped: no Firebase user")
@@ -111,6 +112,7 @@ final class FirebaseDataService {
         }
     }
 
+    @available(*, unavailable, message: "User-generated library videos are local-only. Do not delete remote Firebase video copies.")
     func deleteVideo(generationId: String, userId explicitUserId: String? = nil) async {
         guard let userId = explicitUserId ?? Auth.auth().currentUser?.uid else { return }
         let storagePath = "users/\(userId)/videos/\(generationId).mp4"
@@ -123,6 +125,7 @@ final class FirebaseDataService {
         }
     }
 
+    @available(*, unavailable, message: "User-generated library metadata is local-only. Do not sync generations to Firebase.")
     func upsertGeneration(_ gen: Generation, remoteVideoUrl: String? = nil) async {
         guard let userId = gen.userId ?? Auth.auth().currentUser?.uid else {
             print("[FirebaseData] Generation sync skipped: no Firebase user")
@@ -159,6 +162,7 @@ final class FirebaseDataService {
         }
     }
 
+    @available(*, unavailable, message: "User-generated library metadata is local-only. Read GenerationService local storage instead.")
     func fetchGenerations(userId: String) async -> [Generation] {
         do {
             let snapshot = try await db.collection("users").document(userId)
@@ -174,6 +178,7 @@ final class FirebaseDataService {
         }
     }
 
+    @available(*, unavailable, message: "User-generated library metadata is local-only. Delete local generation storage instead.")
     func deleteGeneration(id: String, userId explicitUserId: String? = nil) async {
         guard let userId = explicitUserId ?? Auth.auth().currentUser?.uid else { return }
         do {

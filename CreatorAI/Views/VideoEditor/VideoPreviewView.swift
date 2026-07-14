@@ -4,6 +4,19 @@ import AVFoundation
 
 // MARK: - Compact Video Preview
 
+private struct LiveTransitionState {
+    let boundaryIndex: Int
+    let incomingClip: Clip
+    let incomingOpacity: Double
+    let outgoingOpacity: Double
+    let blackOpacity: Double
+    let incomingLocalTime: Double
+
+    var playerKey: String {
+        "\(boundaryIndex)-\(incomingClip.id)-\(incomingClip.localUri ?? incomingClip.uri)"
+    }
+}
+
 struct VideoPreviewView: View {
     @ObservedObject var viewModel: VideoEditorViewModel
     @Environment(\.theme) var theme
@@ -11,6 +24,8 @@ struct VideoPreviewView: View {
     @State private var logoDragBase: CGPoint?
     @State private var posterImage: PlatformImage?
     @State private var overlayImage: PlatformImage?
+    @State private var transitionPlayer: AVPlayer?
+    @State private var transitionPlayerKey = ""
 
     var body: some View {
         GeometryReader { geo in
@@ -20,15 +35,17 @@ struct VideoPreviewView: View {
                     .clipLayout(visibleClip?.clip, canvasSize: geo.size)
 
                 // Video
-                if let player = viewModel.player {
+                let transitionState = liveTransitionState
+
+                if let player = viewModel.player, !viewModel.isPreparingSelectedClip {
                     PlatformVideoPlayerView(player: player, videoGravity: .resizeAspectFill)
-                        .opacity(viewModel.isPlaying ? 1 : 0)
+                        .opacity(transitionState?.outgoingOpacity ?? 1)
                         .clipFilter(visibleClip?.clip.filterName ?? "None")
                         .clipLayout(visibleClip?.clip, canvasSize: geo.size)
-                } else if posterImage == nil {
+                } else if posterImage == nil || viewModel.isPreparingSelectedClip {
                     theme.surface
                     VStack(spacing: 14) {
-                        if !viewModel.clipsCached {
+                        if !viewModel.clipsCached || viewModel.isPreparingSelectedClip {
                             ProgressView()
                                 .scaleEffect(1.2)
                                 .tint(theme.textTertiary)
@@ -59,8 +76,23 @@ struct VideoPreviewView: View {
                     .padding(18)
                 }
 
+                if let transitionState,
+                   let transitionPlayer {
+                    PlatformVideoPlayerView(player: transitionPlayer, videoGravity: .resizeAspectFill)
+                        .opacity(transitionState.incomingOpacity)
+                        .clipFilter(transitionState.incomingClip.filterName)
+                        .clipLayout(transitionState.incomingClip, canvasSize: geo.size)
+                        .allowsHitTesting(false)
+                }
+
                 filterTintOverlay(for: visibleClip?.clip.filterName ?? "None")
                     .allowsHitTesting(false)
+
+                if let opacity = transitionState?.blackOpacity, opacity > 0 {
+                    Color.black
+                        .opacity(opacity)
+                        .allowsHitTesting(false)
+                }
 
                 // Subtitle overlay
                 if let overlay = visibleTextOverlay,
@@ -183,6 +215,9 @@ struct VideoPreviewView: View {
         .task(id: visibleClip?.clip.overlayImageUri ?? "no-logo") {
             await loadOverlayImage()
         }
+        .task(id: liveTransitionState?.playerKey ?? "no-transition-player") {
+            await prepareTransitionPlayer()
+        }
     }
 
     @ViewBuilder
@@ -259,13 +294,58 @@ struct VideoPreviewView: View {
             : nil
     }
 
+    private var liveTransitionState: LiveTransitionState? {
+        guard viewModel.isPlaying, viewModel.clips.count > 1 else { return nil }
+
+        var elapsed: Double = 0
+        let playhead = max(0, viewModel.currentTime)
+
+        for index in 0..<(viewModel.clips.count - 1) {
+            let clip = viewModel.clips[index]
+            let nextClip = viewModel.clips[index + 1]
+            let transition = clip.transitionName
+            let clipDuration = clipPreviewDuration(clip)
+
+            defer { elapsed += clipDuration }
+            guard transition != "None" else { continue }
+
+            let nextDuration = clipPreviewDuration(nextClip)
+            let transitionDuration = min(
+                max(0.1, min(1.2, clip.transitionDuration)),
+                clipDuration * 0.45,
+                nextDuration * 0.45
+            )
+            guard transitionDuration > 0.05 else { continue }
+
+            let boundary = elapsed + clipDuration
+            let fadeOutStart = boundary - transitionDuration
+            guard playhead >= fadeOutStart && playhead < boundary else { continue }
+
+            let progress = max(0, min(1, (playhead - fadeOutStart) / transitionDuration))
+            let incomingLocalTime = transitionIncomingSourceTime(for: nextClip, transitionProgressSeconds: playhead - fadeOutStart)
+            let incomingOpacity = transition == "Dip" ? max(0, (progress - 0.45) / 0.55) : progress
+            let outgoingOpacity = transition == "Dip" ? max(0, 1 - (progress / 0.55)) : 1 - progress
+            let blackOpacity = transition == "Dip" ? max(0, 1 - abs(progress - 0.5) / 0.28) : 0
+            return LiveTransitionState(
+                boundaryIndex: index,
+                incomingClip: nextClip,
+                incomingOpacity: incomingOpacity,
+                outgoingOpacity: outgoingOpacity,
+                blackOpacity: blackOpacity,
+                incomingLocalTime: incomingLocalTime
+            )
+        }
+
+        return nil
+    }
+
     private var visibleClip: (index: Int, clip: Clip, localTime: Double)? {
         guard !viewModel.clips.isEmpty else { return nil }
 
         if !viewModel.isPlaying,
            case .video(let selectedIndex) = viewModel.timelineSelection,
            viewModel.clips.indices.contains(selectedIndex) {
-            return (selectedIndex, viewModel.clips[selectedIndex], 0)
+            return (selectedIndex, viewModel.clips[selectedIndex], viewModel.currentTime)
         }
 
         if viewModel.isPlaying, viewModel.clips.count > 1 {
@@ -283,6 +363,59 @@ struct VideoPreviewView: View {
         let fallbackIndex = viewModel.clips.indices.contains(viewModel.activeClipIndex) ? viewModel.activeClipIndex : 0
         let clip = viewModel.clips[fallbackIndex]
         return (fallbackIndex, clip, viewModel.currentTime)
+    }
+
+    private func clipPreviewDuration(_ clip: Clip) -> Double {
+        let base = clip.beatDuration ?? clip.sourceDuration ?? 1.5
+        return max(0.1, base * (clip.trimEnd - clip.trimStart) / 100.0)
+    }
+
+    private func transitionIncomingSourceTime(for clip: Clip, transitionProgressSeconds: Double) -> Double {
+        let sourceDuration = max(0.1, clip.sourceDuration ?? clip.beatDuration ?? transitionProgressSeconds)
+        let sourceStart = max(0, min(sourceDuration, (clip.trimStart / 100.0) * sourceDuration))
+        let sourceEnd = max(sourceStart + 0.1, min(sourceDuration, (clip.trimEnd / 100.0) * sourceDuration))
+        return max(sourceStart, min(sourceEnd, sourceStart + transitionProgressSeconds))
+    }
+
+    private func prepareTransitionPlayer() async {
+        guard let state = liveTransitionState else {
+            await MainActor.run {
+                transitionPlayer?.pause()
+                transitionPlayer = nil
+                transitionPlayerKey = ""
+            }
+            return
+        }
+
+        let key = state.playerKey
+        if key != transitionPlayerKey {
+            let urlString = state.incomingClip.localUri ?? state.incomingClip.uri
+            guard let url = urlForClipPreview(urlString) else { return }
+            let player = AVPlayer(url: url)
+            player.isMuted = true
+            await MainActor.run {
+                transitionPlayer?.pause()
+                transitionPlayer = player
+                transitionPlayerKey = key
+            }
+        }
+
+        let target = CMTime(seconds: state.incomingLocalTime, preferredTimescale: 600)
+        await MainActor.run {
+            transitionPlayer?.seek(to: target, toleranceBefore: .zero, toleranceAfter: CMTime(seconds: 0.03, preferredTimescale: 600))
+            if viewModel.isPlaying {
+                transitionPlayer?.play()
+            } else {
+                transitionPlayer?.pause()
+            }
+        }
+    }
+
+    private func urlForClipPreview(_ urlString: String) -> URL? {
+        if urlString.hasPrefix("http://") || urlString.hasPrefix("https://") || urlString.hasPrefix("file://") {
+            return URL(string: urlString)
+        }
+        return URL(fileURLWithPath: urlString)
     }
 
     private func textIsVisible(for clip: Clip, localTime: Double, duration: Double) -> Bool {

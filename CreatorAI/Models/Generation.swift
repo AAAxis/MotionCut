@@ -65,6 +65,15 @@ struct Generation: Identifiable, Codable, Equatable {
         return resultVideoUrl?.hasPrefix("http") == true
     }
 
+    /// True only for content that is available from this device's app storage.
+    /// Remote-only URLs are intentionally excluded from Library.
+    var hasLocalLibraryMedia: Bool {
+        if status == .processing { return true }
+        if let url = videoFileURL, url.isFileURL { return true }
+        if usableTakesJson != nil { return true }
+        return false
+    }
+
     /// Returns takes JSON only when at least one clip source can be used on this device.
     /// This avoids opening iOS-sandbox clip paths on macOS when a rendered remote video exists.
     var usableTakesJson: String? {

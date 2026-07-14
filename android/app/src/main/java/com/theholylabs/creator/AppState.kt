@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.theholylabs.creator.services.PurchaseService
 import com.theholylabs.creator.services.SecureStorage
-import com.theholylabs.creator.services.FirebaseDataService
 import com.revenuecat.purchases.Package
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -262,9 +261,9 @@ class AppState(application: Application) : AndroidViewModel(application) {
                 val status = com.theholylabs.creator.services.GenerationService.pollAICreate(generationId)
                 when (status?.status) {
                     "succeeded" -> {
-                        // Download video locally so it survives URL expiration, then mirror to Firebase Storage.
+                        // Download video locally so it survives URL expiration. The user's
+                        // generated library is device-local only.
                         var localVideoUrl = status.outputUrl
-                        var firebaseVideoUrl: String? = null
                         if (!status.outputUrl.isNullOrEmpty()) {
                             try {
                                 val destFile = java.io.File(
@@ -274,9 +273,6 @@ class AppState(application: Application) : AndroidViewModel(application) {
                                 com.theholylabs.creator.services.FileStorageService.downloadFile(status.outputUrl, destFile)
                                 if (destFile.exists() && destFile.length() > 1000) {
                                     localVideoUrl = destFile.absolutePath
-                                    existing?.userId?.let { uid ->
-                                        firebaseVideoUrl = FirebaseDataService.uploadVideoFile(uid, destFile, generationId)
-                                    }
 
                                     // Also save to gallery
                                     val contentValues = android.content.ContentValues().apply {
@@ -306,22 +302,12 @@ class AppState(application: Application) : AndroidViewModel(application) {
                         }
                         com.theholylabs.creator.services.NotificationService.notifyVideoReady(getApplication(), videoName)
                         com.theholylabs.creator.services.GenerationService.updateGenerationLocal(getApplication(), generationId, com.theholylabs.creator.models.GenerationStatus.COMPLETED, localVideoUrl)
-                        val completed = com.theholylabs.creator.services.GenerationService
-                            .loadLocalGenerations(getApplication())
-                            .find { it.id == generationId }
-                        if (completed != null) {
-                            FirebaseDataService.upsertGeneration(completed, firebaseVideoUrl)
-                        }
                         fetchCredits()
                         isRunning = false
                     }
                     "failed" -> {
                         com.theholylabs.creator.services.NotificationService.notifyVideoFailed(getApplication(), videoName)
                         com.theholylabs.creator.services.GenerationService.updateGenerationLocal(getApplication(), generationId, com.theholylabs.creator.models.GenerationStatus.FAILED)
-                        com.theholylabs.creator.services.GenerationService
-                            .loadLocalGenerations(getApplication())
-                            .find { it.id == generationId }
-                            ?.let { FirebaseDataService.upsertGeneration(it) }
                         fetchCredits()
                         isRunning = false
                     }
@@ -338,16 +324,6 @@ class AppState(application: Application) : AndroidViewModel(application) {
         com.theholylabs.creator.services.GenerationService.saveGenerationLocal(getApplication(), generation)
         _uiState.update { 
             it.copy(pendingGenerations = com.theholylabs.creator.services.GenerationService.loadLocalGenerations(getApplication()))
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            var firebaseVideoUrl: String? = null
-            val uid = generation.userId
-            val localPath = generation.videoUri ?: generation.resultVideoUrl
-            if (uid != null && generation.status == com.theholylabs.creator.models.GenerationStatus.COMPLETED && localPath != null) {
-                val file = java.io.File(localPath.removePrefix("file://"))
-                firebaseVideoUrl = FirebaseDataService.uploadVideoFile(uid, file, generation.id)
-            }
-            FirebaseDataService.upsertGeneration(generation, firebaseVideoUrl)
         }
     }
 }

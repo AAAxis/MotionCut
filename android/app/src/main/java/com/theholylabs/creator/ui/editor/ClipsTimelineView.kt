@@ -46,6 +46,7 @@ import androidx.compose.ui.zIndex
 import com.theholylabs.creator.models.Clip
 import com.theholylabs.creator.services.ThumbnailService
 import com.theholylabs.creator.viewmodels.VideoEditorViewModel
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.min
@@ -83,6 +84,16 @@ fun ClipsTimelineView(
 
     // Auto-scroll timeline to follow playhead
     val scrollState = rememberScrollState()
+    val pixelsPerSecondPx = with(density) { PIXELS_PER_SECOND.dp.toPx() }
+
+    LaunchedEffect(scrollState, pixelsPerSecondPx, totalDuration) {
+        snapshotFlow { scrollState.value }
+            .collect { offsetPx ->
+                val seconds = offsetPx / max(1f, pixelsPerSecondPx)
+                val percent = ((seconds / max(0.1, totalDuration)) * 100.0).toFloat()
+                viewModel.seekTo(percent.coerceIn(0f, 100f))
+            }
+    }
 
     // Scroll to active clip when clip selection changes (not during playback)
     LaunchedEffect(activeClipIndex) {
@@ -123,7 +134,7 @@ fun ClipsTimelineView(
                     modifier = Modifier.height(THUMB_HEIGHT.dp)
                 ) {
                     clips.forEachIndexed { index, clip ->
-                        val clipW = clipWidthDp(clip)
+                        val clipW = clipWidthDp(clip, if (clips.size == 1) totalDuration else null)
                         val isDragged = draggedIndex == index
 
                         Box(
@@ -230,7 +241,7 @@ fun ClipsTimelineView(
                 // Text track row
                 val hasText = clips.any { !it.text.isNullOrEmpty() }
                 if (hasText) {
-                    TextTrackRow(clips = clips)
+                    TextTrackRow(clips = clips, fallbackDuration = if (clips.size == 1) totalDuration else null)
                 }
             }
         }
@@ -271,7 +282,7 @@ fun ClipsTimelineView(
     // CapCut-style trim bar — full width, clip filmstrip with edge handles
     if (activeClipIndex >= 0 && activeClipIndex < clips.size) {
         val clip = clips[activeClipIndex]
-        val dur = clip.beatDuration ?: clip.sourceDuration ?: 3.0
+        val dur = clip.beatDuration ?: clip.sourceDuration ?: if (clips.size == 1 && durationMs > 0) durationMs / 1000.0 else 3.0
         val trimmedStart = dur * clip.trimStart / 100.0
         val trimmedEnd = dur * clip.trimEnd / 100.0
 
@@ -591,13 +602,13 @@ private fun MusicWaveformRow(musicName: String, totalDuration: Double) {
 }
 
 @Composable
-private fun TextTrackRow(clips: List<Clip>) {
+private fun TextTrackRow(clips: List<Clip>, fallbackDuration: Double? = null) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         modifier = Modifier.height(TEXT_ROW_HEIGHT.dp)
     ) {
         clips.forEach { clip ->
-            val w = clipWidthDp(clip)
+            val w = clipWidthDp(clip, fallbackDuration)
             val text = clip.text ?: ""
             val hasContent = text.isNotEmpty()
 
@@ -667,8 +678,8 @@ private fun TrimHandle(onDelta: (Float) -> Unit) {
     }
 }
 
-private fun clipWidthDp(clip: Clip): Float {
-    val dur = clip.beatDuration ?: clip.sourceDuration ?: 3.0
+private fun clipWidthDp(clip: Clip, fallbackDuration: Double? = null): Float {
+    val dur = clip.beatDuration ?: clip.sourceDuration ?: fallbackDuration ?: 3.0
     val trimmedDur = dur * (clip.trimEnd - clip.trimStart) / 100.0
     return max(MIN_CLIP_WIDTH.toDouble(), trimmedDur * PIXELS_PER_SECOND).toFloat()
 }

@@ -451,23 +451,15 @@ object GenerationService {
     }
 
     suspend fun fetchGenerations(userId: String): List<com.theholylabs.creator.models.Generation> {
-        return try {
-            val response: GenerationsResponse = client.get("${BuildConfig.API_BASE_URL}/api/generations/$userId").body()
-            response.generations
-        } catch (e: Exception) {
-            Log.e("GenerationService", "fetchGenerations failed: ${e.message}")
-            emptyList()
-        }
+        // User-generated library items are device-local only. Call
+        // loadLocalGenerations(context) from UI/view models instead of fetching
+        // a remote generation collection.
+        return emptyList()
     }
 
     suspend fun deleteGeneration(id: String): Boolean {
-        return try {
-            val response = client.delete("${BuildConfig.API_BASE_URL}/api/generations/$id")
-            response.status.isSuccess()
-        } catch (e: Exception) {
-            Log.e("GenerationService", "deleteGeneration failed: ${e.message}")
-            false
-        }
+        // Remote deletes are intentionally disabled for user library content.
+        return false
     }
 
     // MARK: - Local Persistence
@@ -522,8 +514,3 @@ object GenerationService {
         }
     }
 }
-
-@Serializable
-data class GenerationsResponse(
-    val generations: List<com.theholylabs.creator.models.Generation>
-)

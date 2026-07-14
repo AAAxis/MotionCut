@@ -207,15 +207,6 @@ final class BackgroundRenderService {
                 }
                 NotificationService.shared.notifyVideoReady(videoName: params.videoName)
 
-                // Upload to Firebase Storage, then optional cloud caption burn-in.
-                Task {
-                    guard let remoteUrl = await FirebaseDataService.shared.uploadVideo(fileURL: persistentURL, generationId: generationId) else { return }
-                    await GenerationService.shared.updateGeneration(id: generationId, remoteVideoUrl: remoteUrl)
-
-                    if params.addCaptionsViaCloud, let outputUrl = await CaptionService.shared.requestCloudCaptions(generationId: generationId, videoUri: remoteUrl, takesJson: params.takesJson) {
-                        await GenerationService.shared.updateGeneration(id: generationId, remoteVideoUrl: outputUrl)
-                    }
-                }
             } catch {
                 // Never store cache URL — system can purge Caches when app is backgrounded, so video would disappear
                 print("[BackgroundRender] Copy to saved_videos failed: \(error) — video not persisted")

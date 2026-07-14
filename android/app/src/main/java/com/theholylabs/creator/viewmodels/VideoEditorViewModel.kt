@@ -1,6 +1,7 @@
 package com.theholylabs.creator.viewmodels
 
 import android.app.Application
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
@@ -34,7 +35,6 @@ import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.random.Random
 
 class VideoEditorViewModel(
     application: Application,
@@ -55,6 +55,9 @@ class VideoEditorViewModel(
 
     private val _clipsCached = MutableStateFlow(false)
     val clipsCached: StateFlow<Boolean> = _clipsCached.asStateFlow()
+
+    private val _isPreparingSelectedClip = MutableStateFlow(false)
+    val isPreparingSelectedClip: StateFlow<Boolean> = _isPreparingSelectedClip.asStateFlow()
 
     // Playback
     private val _isPlaying = MutableStateFlow(true)
@@ -325,8 +328,14 @@ class VideoEditorViewModel(
         get() = _clips.value.any { it.beatDuration != null } && _clips.value.size > 1
 
     private fun clipDurationMs(clip: Clip): Long {
-        val seconds = clip.beatDuration ?: clip.sourceDuration ?: 3.0
+        val seconds = clip.beatDuration ?: clip.sourceDuration ?: singleClipPlayerDurationSeconds() ?: 3.0
         return (seconds * 1000.0).toLong().coerceAtLeast(1L)
+    }
+
+    private fun singleClipPlayerDurationSeconds(): Double? {
+        if (_clips.value.size != 1) return null
+        val playerDuration = videoPlayer?.duration ?: C.TIME_UNSET
+        return if (playerDuration > 0 && playerDuration != C.TIME_UNSET) playerDuration / 1000.0 else null
     }
 
     private fun timelineOffsetMs(index: Int): Long {
@@ -357,6 +366,7 @@ class VideoEditorViewModel(
     init {
         parseClips()
         setupPlayer()
+        viewModelScope.launch { hydrateMissingClipDurations() }
         loadMusicFromUrl()
         // Auto-enable subtitles if clips have text (admaker reels)
         if (_clips.value.any { !it.text.isNullOrBlank() }) {
@@ -531,7 +541,10 @@ class VideoEditorViewModel(
         val clips = _clips.value
         if (index < 0 || index >= clips.size) return
         _activeClipIndex.value = index
+        val clip = clips[index]
+        _isPreparingSelectedClip.value = isRemoteUrl(clip.uri) && clip.localUri == null && !_clipsCached.value
         seekTimelineTo(timelineOffsetMs(index))
+        viewModelScope.launch { hydrateMissingClipDurations() }
     }
 
     // Debounce trim updates to avoid recomposition storm during drag
@@ -875,8 +888,57 @@ class VideoEditorViewModel(
 
             if (changed) {
                 _clips.value = clips
+                _durationMs.value = timelineDurationMs()
+                hydrateMissingClipDurations()
+                rebuildPlayerPlaylist(_activeClipIndex.value)
             }
             _clipsCached.value = true
+            _isPreparingSelectedClip.value = false
+        }
+    }
+
+    private suspend fun hydrateMissingClipDurations() {
+        val current = _clips.value
+        if (current.isEmpty()) return
+
+        val hydrated = current.toMutableList()
+        var changed = false
+
+        for (i in hydrated.indices) {
+            val clip = hydrated[i]
+            if (clip.beatDuration != null) continue
+            if ((clip.sourceDuration ?: 0.0) > 0.0) continue
+
+            val uri = clip.localUri ?: clip.uri
+            val duration = probeVideoDurationSeconds(uri) ?: continue
+            hydrated[i] = clip.copy(sourceDuration = duration)
+            changed = true
+        }
+
+        if (changed) {
+            _clips.value = hydrated
+            _durationMs.value = timelineDurationMs()
+        }
+    }
+
+    private suspend fun probeVideoDurationSeconds(uri: String): Double? = withContext(Dispatchers.IO) {
+        try {
+            val retriever = android.media.MediaMetadataRetriever()
+            try {
+                if (uri.startsWith("content://")) {
+                    retriever.setDataSource(getApplication<Application>(), Uri.parse(uri))
+                } else {
+                    retriever.setDataSource(uri)
+                }
+                val durationMs = retriever
+                    .extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()
+                durationMs?.takeIf { it > 0 }?.div(1000.0)
+            } finally {
+                retriever.release()
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 

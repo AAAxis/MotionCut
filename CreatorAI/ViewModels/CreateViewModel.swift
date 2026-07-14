@@ -304,10 +304,12 @@ class CreateViewModel: ObservableObject {
                         return
                     }
 
+                    let outputUrl = makeAbsoluteReelURL(downloadUrl)
+                    let localUri = await downloadGenerationOutput(outputUrl, generationID: generation.id)
                     await GenerationService.shared.updateGeneration(
                         id: generation.id,
                         status: .completed,
-                        remoteVideoUrl: makeAbsoluteReelURL(downloadUrl)
+                        videoUri: localUri
                     )
                 }
             } catch let error as APIError {
@@ -514,10 +516,11 @@ private func pollInfluenceResult(generationID: String, influenceID: String) asyn
                 await GenerationService.shared.updateGeneration(id: generationID, status: .failed)
                 return
             }
+            let localUri = await downloadGenerationOutput(outputURL, generationID: generationID)
             await GenerationService.shared.updateGeneration(
                 id: generationID,
                 status: .completed,
-                remoteVideoUrl: outputURL
+                videoUri: localUri
             )
             return
         case "failed", "canceled":
@@ -537,4 +540,10 @@ private func makeAbsoluteReelURL(_ path: String) -> String {
     }
 
     return "\(APIService.shared.syncBaseURL)\(path)"
+}
+
+private func downloadGenerationOutput(_ urlString: String, generationID: String) async -> String? {
+    let localFile = FileStorageService.shared.savedVideosDirectory.appendingPathComponent("\(generationID).mp4")
+    try? await FileStorageService.shared.downloadFile(from: urlString, to: localFile)
+    return FileManager.default.fileExists(atPath: localFile.path) ? localFile.path : nil
 }

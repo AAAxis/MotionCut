@@ -1,4 +1,4 @@
-What's New in 3.3:
+What's New in 3.4:
 
 - Removed legacy Supabase paths and moved app data flows to Firebase-backed services.
 - Updated the editor with a unified AI workspace for scripts, clips, captions, music, voiceover, and export.

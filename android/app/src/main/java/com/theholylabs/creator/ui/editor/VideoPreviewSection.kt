@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -48,6 +49,8 @@ fun VideoPreviewSection(
     val activeClipIndex by viewModel.activeClipIndex.collectAsState()
     val aspectRatio by viewModel.aspectRatio.collectAsState()
     val selectedMusic by viewModel.selectedMusic.collectAsState()
+    val clipsCached by viewModel.clipsCached.collectAsState()
+    val isPreparingSelectedClip by viewModel.isPreparingSelectedClip.collectAsState()
 
     val maxDimDp = 280.dp
     val density = LocalDensity.current
@@ -74,7 +77,7 @@ fun VideoPreviewSection(
                 .clickable { viewModel.togglePlayPause() },
             contentAlignment = Alignment.Center
         ) {
-            viewModel.videoPlayer?.let { player ->
+            viewModel.videoPlayer?.takeUnless { isPreparingSelectedClip }?.let { player ->
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
@@ -89,6 +92,25 @@ fun VideoPreviewSection(
                     },
                     modifier = Modifier.fillMaxSize()
                 )
+            }
+
+            if (isPreparingSelectedClip || (viewModel.videoPlayer == null && !clipsCached)) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(28.dp),
+                        color = Color(0xFFFF9500),
+                        strokeWidth = 2.dp
+                    )
+                    Text(
+                        text = "Loading video...",
+                        color = Color.White.copy(alpha = 0.72f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
 
             // Draggable subtitle overlay

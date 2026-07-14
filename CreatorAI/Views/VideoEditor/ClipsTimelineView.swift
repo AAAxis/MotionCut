@@ -179,7 +179,7 @@ struct ClipsTimelineView: View {
                 }
                 let nextOffset = clampedTimelineOffset(dragStartOffset - value.translation.width)
                 scrollOffset = nextOffset
-                viewModel.seekToTime(Double(nextOffset / max(1, pixelsPerSecond)))
+                viewModel.seekTimeline(to: Double(nextOffset / max(1, pixelsPerSecond)))
             }
             .onEnded { _ in
                 guard !activeItemDrag else { return }
@@ -833,7 +833,7 @@ struct ClipsTimelineView: View {
         let nextOffset = clampedTimelineOffset(scrollOffset + dominantDelta)
         scrollOffset = nextOffset
         dragStartOffset = nextOffset
-        viewModel.seekToTime(Double(nextOffset / max(1, pixelsPerSecond)))
+        viewModel.seekTimeline(to: Double(nextOffset / max(1, pixelsPerSecond)))
     }
 
     private func handleMacTrackpadMagnify(_ magnification: CGFloat) {
@@ -850,12 +850,12 @@ struct ClipsTimelineView: View {
     }
 
     private func timelineDuration(for clip: Clip) -> Double {
-        let dur = clip.beatDuration ?? clip.sourceDuration ?? 3.0
+        let dur = displayDuration(for: clip)
         return dur * (clip.trimEnd - clip.trimStart) / 100.0
     }
 
     private func handleTrimDrag(index: Int, isStart: Bool, delta: CGFloat, clip: Clip) {
-        let dur = clip.beatDuration ?? clip.sourceDuration ?? 3.0
+        let dur = displayDuration(for: clip)
         let totalWidth = dur * pixelsPerSecond
         let pctChange = Double(delta / totalWidth) * 100.0
         if isStart {
@@ -865,6 +865,13 @@ struct ClipsTimelineView: View {
             let newVal = max(clip.trimStart + 5, min(100, clip.trimEnd + pctChange))
             viewModel.updateClipTrimEnd(index, newVal)
         }
+    }
+
+    private func displayDuration(for clip: Clip) -> Double {
+        if let beatDuration = clip.beatDuration, beatDuration > 0 { return beatDuration }
+        if let sourceDuration = clip.sourceDuration, sourceDuration > 0 { return sourceDuration }
+        if viewModel.clips.count == 1, viewModel.duration > 0 { return viewModel.duration }
+        return 3.0
     }
 
     private func formatRulerTime(_ seconds: Double) -> String {

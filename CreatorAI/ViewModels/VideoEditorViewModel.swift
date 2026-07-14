@@ -58,6 +58,7 @@ class VideoEditorViewModel: ObservableObject {
     @Published var activeClipIndex: Int = 0
     @Published var timelineSelection: TimelineSelection = .none
     @Published var clipsCached = false
+    @Published var isPreparingSelectedClip = false
 
     // Playback
     @Published var isPlaying = true
@@ -338,6 +339,7 @@ class VideoEditorViewModel: ObservableObject {
         }
 
         setupPlayer()
+        Task { await hydrateMissingClipDurations() }
     }
 
     // MARK: - Player Setup
@@ -349,10 +351,12 @@ class VideoEditorViewModel: ObservableObject {
         // Skip setup if the clip is a remote URL that hasn't been cached yet
         // preCacheClips() will call rebuildPlaylistIfNeeded() after caching
         if isRemoteURL(urlString) && firstClip.localUri == nil {
+            isPreparingSelectedClip = true
             return
         }
 
         guard let url = createURL(from: urlString) else { return }
+        isPreparingSelectedClip = false
 
         let playerItem = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: playerItem)
@@ -397,8 +401,8 @@ class VideoEditorViewModel: ObservableObject {
             let asset = AVURLAsset(url: url)
             let beatDur = clip.beatDuration ?? 1.5
             let srcDur = clip.sourceDuration ?? 10.0
-            let maxStart = max(0, srcDur - beatDur - 0.5)
-            let startOffset = Double.random(in: 0...max(0.01, maxStart))
+            let maxStart = max(0, srcDur - beatDur)
+            let startOffset = min(maxStart, max(0, (clip.trimStart / 100.0) * srcDur))
 
             let start = CMTime(seconds: startOffset, preferredTimescale: 600)
             let end = CMTime(seconds: startOffset + beatDur, preferredTimescale: 600)
@@ -601,6 +605,23 @@ class VideoEditorViewModel: ObservableObject {
         seek(to: pct)
     }
 
+    func seekTimeline(to seconds: Double) {
+        guard !clips.isEmpty else { return }
+        let total = max(0.1, clips.reduce(0) { $0 + timelineClipDuration(for: $1) })
+        let target = max(0, min(seconds, total))
+
+        var elapsed: Double = 0
+        for (index, clip) in clips.enumerated() {
+            let clipDuration = max(0.1, timelineClipDuration(for: clip))
+            if target <= elapsed + clipDuration || index == clips.count - 1 {
+                let localTime = max(0, min(clipDuration, target - elapsed))
+                seekClipPreview(index: index, localTimelineTime: localTime, globalTimelineTime: elapsed + localTime)
+                return
+            }
+            elapsed += clipDuration
+        }
+    }
+
     func pauseForScrub() {
         if isPlaying {
             player?.pause()
@@ -650,6 +671,97 @@ class VideoEditorViewModel: ObservableObject {
         }
     }
 
+    private func seekClipPreview(index: Int, localTimelineTime: Double, globalTimelineTime: Double) {
+        guard clips.indices.contains(index) else { return }
+
+        if isReelMode && generatedVideoUri == nil {
+            rebuildPlaylistFrom(index: index, seekOffset: localTimelineTime)
+            currentTime = globalTimelineTime
+            syncMusic(to: globalTimelineTime)
+            syncVoiceover(to: globalTimelineTime)
+            return
+        }
+
+        let clip = clips[index]
+        guard !isImageClip(clip) else {
+            activeClipIndex = index
+            timelineSelection = .video(index)
+            player?.pause()
+            removeAllObservers()
+            playlistItems.removeAll()
+            currentQueueItems = []
+            player = nil
+            currentTime = localTimelineTime
+            syncMusic(to: globalTimelineTime)
+            syncVoiceover(to: globalTimelineTime)
+            return
+        }
+
+        let urlString = clip.localUri ?? clip.uri
+        if isRemoteURL(urlString) && clip.localUri == nil {
+            isPreparingSelectedClip = true
+            currentTime = localTimelineTime
+            return
+        }
+        guard let url = createURL(from: urlString) else { return }
+        isPreparingSelectedClip = false
+
+        let sourceTime = sourceTime(for: clip, localTimelineTime: localTimelineTime)
+        if activeClipIndex == index,
+           let existingPlayer = player,
+           currentQueueItems.isEmpty,
+           playlistItems.isEmpty {
+            currentTime = localTimelineTime
+            existingPlayer.seek(
+                to: CMTime(seconds: sourceTime, preferredTimescale: 600),
+                toleranceBefore: .zero,
+                toleranceAfter: CMTime(seconds: 0.03, preferredTimescale: 600)
+            )
+            syncMusic(to: globalTimelineTime)
+            syncVoiceover(to: globalTimelineTime)
+            return
+        }
+
+        activeClipIndex = index
+        timelineSelection = .video(index)
+
+        removeAllObservers()
+        playlistItems.removeAll()
+        currentQueueItems = []
+
+        let item = AVPlayerItem(url: url)
+        applyClipAudioSettings(clip, to: item)
+        if let sourceDuration = clip.sourceDuration ?? clip.beatDuration {
+            let end = max(sourceTime + 0.05, min(sourceDuration, sourceTime + max(0.1, timelineClipDuration(for: clip) - localTimelineTime)))
+            item.forwardPlaybackEndTime = CMTime(seconds: end, preferredTimescale: 600)
+        }
+        item.seek(to: CMTime(seconds: sourceTime, preferredTimescale: 600), completionHandler: nil)
+
+        let wasPlaying = isPlaying
+        let singlePlayer = AVPlayer(playerItem: item)
+        singlePlayer.isMuted = isMuted || clip.isMuted
+        player = singlePlayer
+        duration = timelineClipDuration(for: clip)
+        currentTime = localTimelineTime
+        observeEndForLoop(item: item)
+        startTimeObserver()
+        syncMusic(to: globalTimelineTime)
+        syncVoiceover(to: globalTimelineTime)
+        if wasPlaying {
+            singlePlayer.play()
+            playMusicIfAudible(at: globalTimelineTime)
+            playVoiceoverIfAudible(at: globalTimelineTime)
+        }
+    }
+
+    private func sourceTime(for clip: Clip, localTimelineTime: Double) -> Double {
+        let sourceDuration = max(0.1, clip.sourceDuration ?? clip.beatDuration ?? localTimelineTime)
+        let trimStartTime = max(0, min(sourceDuration, (clip.trimStart / 100.0) * sourceDuration))
+        let trimEndTime = max(trimStartTime + 0.1, min(sourceDuration, (clip.trimEnd / 100.0) * sourceDuration))
+        let speed = max(0.1, min(5.0, clip.speed))
+        return max(trimStartTime, min(trimEndTime, trimStartTime + localTimelineTime * speed))
+    }
+
     private func rebuildPlaylistFrom(index: Int, seekOffset: Double) {
         removeAllObservers()
 
@@ -664,8 +776,8 @@ class VideoEditorViewModel: ObservableObject {
             let asset = AVURLAsset(url: url)
             let beatDur = clip.beatDuration ?? 1.5
             let srcDur = clip.sourceDuration ?? 10.0
-            let maxStart = max(0, srcDur - beatDur - 0.5)
-            let startOffset = Double.random(in: 0...max(0.01, maxStart))
+            let maxStart = max(0, srcDur - beatDur)
+            let startOffset = min(maxStart, max(0, (clip.trimStart / 100.0) * srcDur))
 
             let effectiveStart: Double
             if i == index {
@@ -709,12 +821,14 @@ class VideoEditorViewModel: ObservableObject {
         guard index >= 0, index < clips.count else { return }
         activeClipIndex = index
         timelineSelection = .video(index)
+        Task { await hydrateMissingClipDurations() }
         if isImageClip(clips[index]) {
             player?.pause()
             removeAllObservers()
             playlistItems.removeAll()
             currentQueueItems = []
             player = nil
+            isPreparingSelectedClip = false
             duration = clips[index].beatDuration ?? clips[index].sourceDuration ?? 3.0
             currentTime = 0
             return
@@ -730,7 +844,18 @@ class VideoEditorViewModel: ObservableObject {
 
         let clip = clips[index]
         let urlString = clip.localUri ?? clip.uri
+        if isRemoteURL(urlString) && clip.localUri == nil {
+            player?.pause()
+            removeAllObservers()
+            playlistItems.removeAll()
+            currentQueueItems = []
+            player = nil
+            currentTime = 0
+            isPreparingSelectedClip = true
+            return
+        }
         guard let url = createURL(from: urlString) else { return }
+        isPreparingSelectedClip = false
 
         removeAllObservers()
         playlistItems.removeAll()
@@ -748,7 +873,7 @@ class VideoEditorViewModel: ObservableObject {
             item.seek(to: CMTime(seconds: startOffset, preferredTimescale: 600), completionHandler: nil)
             duration = beatDur
         } else {
-            duration = 0
+            duration = timelineClipDuration(for: clip)
         }
 
         let singlePlayer = AVPlayer(playerItem: item)
@@ -1167,6 +1292,47 @@ class VideoEditorViewModel: ObservableObject {
         } catch {
             return nil
         }
+    }
+
+    private func mediaDuration(for url: URL) async -> Double? {
+        let asset = AVURLAsset(url: url)
+        do {
+            let duration = try await asset.load(.duration)
+            let seconds = CMTimeGetSeconds(duration)
+            return seconds.isFinite && seconds > 0 ? seconds : nil
+        } catch {
+            return nil
+        }
+    }
+
+    private func hydrateMissingClipDurations() async {
+        guard !clips.isEmpty else { return }
+        var updated = clips
+        var changed = false
+
+        for index in updated.indices {
+            let clip = updated[index]
+            guard clip.beatDuration == nil else { continue }
+            guard clip.sourceDuration == nil || (clip.sourceDuration ?? 0) <= 0 else { continue }
+            guard !isImageClip(clip) else {
+                updated[index].sourceDuration = 3.0
+                changed = true
+                continue
+            }
+
+            let urlString = clip.localUri ?? clip.uri
+            guard let url = createURL(from: urlString),
+                  let seconds = await mediaDuration(for: url) else { continue }
+
+            updated[index].sourceDuration = seconds
+            changed = true
+        }
+
+        guard changed else { return }
+        clips = updated
+        duration = clips.indices.contains(activeClipIndex)
+            ? timelineClipDuration(for: clips[activeClipIndex])
+            : timelineTotalDuration
     }
 
     func updateMusicTrackTiming(id: String, start: Double? = nil, end: Double? = nil) {
@@ -1765,6 +1931,7 @@ class VideoEditorViewModel: ObservableObject {
         }
         guard hasRemote else {
             clipsCached = true
+            isPreparingSelectedClip = false
             return
         }
 
@@ -1778,21 +1945,21 @@ class VideoEditorViewModel: ObservableObject {
             if let localUri = clips[i].localUri, FileManager.default.fileExists(atPath: localUri.replacingOccurrences(of: "file://", with: "")) { continue }
 
             let localPath = storage.savedVideosDirectory.appendingPathComponent("take_\(clips[i].id)_\(i).mp4")
-            let c = clips[i]
 
             if storage.fileExists(at: localPath), let size = storage.fileSize(at: localPath), size > 0 {
                 var updated = clips
-                updated[i] = Clip(id: c.id, uri: c.uri, name: c.name, mimeType: c.mimeType, trimStart: c.trimStart, trimEnd: c.trimEnd, beatDuration: c.beatDuration, sourceDuration: c.sourceDuration, text: c.text, textStart: c.textStart, textEnd: c.textEnd, textX: c.textX, textY: c.textY, localUri: localPath.path, speed: c.speed, audioVolume: c.audioVolume, isMuted: c.isMuted)
+                updated[i].localUri = localPath.path
                 clips = updated
+                if i == activeClipIndex { isPreparingSelectedClip = false }
                 continue
             }
 
             do {
                 try await storage.downloadFile(from: clips[i].uri, to: localPath)
                 var updated = clips
-                let clip = clips[i]
-                updated[i] = Clip(id: clip.id, uri: clip.uri, name: clip.name, mimeType: clip.mimeType, trimStart: clip.trimStart, trimEnd: clip.trimEnd, beatDuration: clip.beatDuration, sourceDuration: clip.sourceDuration, text: clip.text, textStart: clip.textStart, textEnd: clip.textEnd, textX: clip.textX, textY: clip.textY, localUri: localPath.path, speed: clip.speed, audioVolume: clip.audioVolume, isMuted: clip.isMuted)
+                updated[i].localUri = localPath.path
                 clips = updated
+                if i == activeClipIndex { isPreparingSelectedClip = false }
                 print("[Cache] Clip \(i) cached")
             } catch {
                 print("[Cache] Clip \(i) download failed: \(error)")
@@ -1800,6 +1967,8 @@ class VideoEditorViewModel: ObservableObject {
         }
 
         clipsCached = true
+        isPreparingSelectedClip = false
+        await hydrateMissingClipDurations()
 
         // Update generation's takesJson with local paths so next open doesn't re-download
         if let json = serializeClipsToTakesJson(clips) {
@@ -2819,8 +2988,15 @@ class VideoEditorViewModel: ObservableObject {
     }
 
     private func timelineClipDuration(for clip: Clip) -> Double {
-        let base = clip.beatDuration ?? clip.sourceDuration ?? 3.0
+        let base = clipDisplayDuration(for: clip)
         return max(0, base * (clip.trimEnd - clip.trimStart) / 100.0)
+    }
+
+    private func clipDisplayDuration(for clip: Clip) -> Double {
+        if let beatDuration = clip.beatDuration, beatDuration > 0 { return beatDuration }
+        if let sourceDuration = clip.sourceDuration, sourceDuration > 0 { return sourceDuration }
+        if clips.count == 1, duration > 0 { return duration }
+        return isImageClip(clip) ? 3.0 : 3.0
     }
 
     private func setBeatDuration(for index: Int, seconds: Double) {
@@ -3525,13 +3701,6 @@ class VideoEditorViewModel: ObservableObject {
                 musicName: selectedMusic?.name
             )
             await GenerationService.shared.saveGeneration(generation)
-
-            // Upload to Firebase Storage for cloud persistence.
-            Task {
-                if let remoteUrl = await FirebaseDataService.shared.uploadVideo(fileURL: persistentURL, generationId: id) {
-                    await GenerationService.shared.updateGeneration(id: id, remoteVideoUrl: remoteUrl)
-                }
-            }
 
             generatedVideoUri = persistentURL
             processingStatus = "completed"

@@ -14,8 +14,8 @@ android {
         applicationId = "com.theholylabs.creator"
         minSdk = 26
         targetSdk = 35
-        versionCode = 5
-        versionName = "3.0.0"
+        versionCode = 12
+        versionName = "3.4"
 
         // API base URL — override in local.properties or CI env
         buildConfigField("String", "API_BASE_URL", "\"https://creatorai-api.polskoydm.workers.dev\"")

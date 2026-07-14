@@ -85,6 +85,10 @@ object FirebaseDataService {
         }
     }
 
+    @Deprecated(
+        "User-generated library videos are local-only. Do not upload them to Firebase.",
+        level = DeprecationLevel.ERROR
+    )
     suspend fun uploadVideoFile(userId: String, file: File, generationId: String): String? {
         if (!file.exists() || file.length() <= 0) return null
 
@@ -114,6 +118,10 @@ object FirebaseDataService {
         }
     }
 
+    @Deprecated(
+        "User-generated library metadata is local-only. Do not sync generations to Firebase.",
+        level = DeprecationLevel.ERROR
+    )
     suspend fun upsertGeneration(gen: Generation, firebaseVideoUrl: String? = null) {
         val userId = gen.userId ?: return
         val data = mutableMapOf<String, Any?>(
@@ -144,6 +152,10 @@ object FirebaseDataService {
         }
     }
 
+    @Deprecated(
+        "User-generated library metadata is local-only. Delete local generation storage instead.",
+        level = DeprecationLevel.ERROR
+    )
     suspend fun deleteGeneration(userId: String, id: String) {
         try {
             db.collection("users")
